@@ -29,7 +29,7 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 ### JT-029 (P1) — Message pagination cursor API
 - Add paged message listing (`limit`, `before_seq`)
 - Update timeline UI to page older messages
-- Status: ⏳ planned
+- Status: ✅ implemented
 
 ### JT-030 (P1) — Security headers / CSP baseline
 - Add restrictive-but-working headers for web shell

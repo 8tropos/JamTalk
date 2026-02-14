@@ -211,15 +211,19 @@ function shortHexBytes(a){
   return a.slice(0,6).map(v => Number(v).toString(16).padStart(2, '0')).join('') + '...';
 }
 
+let timelineItems = [];
+let nextBeforeSeq = null;
+
 function renderTimeline(msgRes){
   const box = q('timeline');
   if (!box) return;
-  const items = msgRes?.body?.items || [];
+  const items = msgRes?.body?.items || timelineItems;
   if (!items.length) {
     box.innerHTML = '<div class="msg-meta">No messages yet.</div>';
     return;
   }
-  box.innerHTML = items.map(m => `
+  const ordered = [...items].sort((a,b) => a.seq - b.seq);
+  box.innerHTML = ordered.map(m => `
     <div class="msg-card">
       <div><strong>seq #${m.seq}</strong> · slot ${m.slot ?? '-'}</div>
       <div class="msg-meta">sender: ${shortAccount(m.sender)} · msg_id: ${shortHexBytes(m.msg_id)}</div>
@@ -231,20 +235,57 @@ function renderTimeline(msgRes){
   }
 }
 
+async function fetchMessagesPage(beforeSeq = null, append = false) {
+  const conv = encodeURIComponent(q('conv-id').value.trim());
+  const limit = Number(q('msg-page-limit').value || '20');
+  const params = new URLSearchParams({ conv_id: decodeURIComponent(conv), limit: String(limit) });
+  if (beforeSeq !== null && beforeSeq !== undefined && beforeSeq !== '') {
+    params.set('before_seq', String(beforeSeq));
+  }
+  const res = await callJson(`/v1/messages?${params.toString()}`);
+  if (res.ok) {
+    nextBeforeSeq = res.body?.next_before_seq ?? null;
+    q('msg-before-seq').value = nextBeforeSeq ? String(nextBeforeSeq) : '';
+    if (append) {
+      const existing = new Map(timelineItems.map(m => [m.seq, m]));
+      (res.body?.items || []).forEach(m => existing.set(m.seq, m));
+      timelineItems = [...existing.values()];
+    } else {
+      timelineItems = res.body?.items || [];
+    }
+    renderTimeline();
+  }
+  return res;
+}
+
 async function refreshLists() {
   const convRes = await callJson('/v1/conversations');
-  const conv = encodeURIComponent(q('conv-id').value.trim());
-  const msgRes = await callJson(`/v1/messages?conv_id=${conv}`);
+  const msgRes = await fetchMessagesPage(null, false);
   q('out-list').textContent = JSON.stringify({ conversations: convRes, messages: msgRes }, null, 2);
-  renderTimeline(msgRes);
 }
 
 q('btn-list-messages').onclick = async () => {
   q('out-list').textContent = '...';
-  const conv = encodeURIComponent(q('conv-id').value.trim());
-  const res = await callJson(`/v1/messages?conv_id=${conv}`);
+  const before = q('msg-before-seq').value.trim();
+  const res = await fetchMessagesPage(before || null, false);
   q('out-list').textContent = JSON.stringify(res, null, 2);
-  renderTimeline(res);
+};
+
+q('btn-load-recent').onclick = async () => {
+  q('out-list').textContent = '...';
+  const res = await fetchMessagesPage(null, false);
+  q('out-list').textContent = JSON.stringify(res, null, 2);
+};
+
+q('btn-load-older').onclick = async () => {
+  q('out-list').textContent = '...';
+  const before = q('msg-before-seq').value.trim();
+  if (!before) {
+    toast('No older-page cursor available yet', true);
+    return;
+  }
+  const res = await fetchMessagesPage(Number(before), true);
+  q('out-list').textContent = JSON.stringify(res, null, 2);
 };
 
 q('btn-render-timeline').onclick = async () => {

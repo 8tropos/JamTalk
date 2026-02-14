@@ -292,6 +292,8 @@ struct ConversationMembersResponse {
 #[derive(Deserialize)]
 struct MessagesQuery {
     conv_id: String,
+    limit: Option<usize>,
+    before_seq: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -310,6 +312,7 @@ struct MessageListResponse {
     ok: bool,
     conv_id: [u8; 32],
     items: Vec<MessageListItem>,
+    next_before_seq: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -1477,7 +1480,13 @@ async fn list_messages(
     let mut items = s
         .message_meta_by_conv_seq
         .iter()
-        .filter(|((cid, _), _)| *cid == conv_id)
+        .filter(|((cid, seq), _)| {
+            *cid == conv_id
+                && match q.before_seq {
+                    Some(before) => *seq < before,
+                    None => true,
+                }
+        })
         .map(|((_cid, seq), m)| MessageListItem {
             seq: *seq,
             msg_id: m.msg_id,
@@ -1488,7 +1497,14 @@ async fn list_messages(
             flags: m.flags,
         })
         .collect::<Vec<_>>();
-    items.sort_by_key(|i| i.seq);
+    items.sort_by_key(|i| std::cmp::Reverse(i.seq));
+
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    if items.len() > limit {
+        items.truncate(limit);
+    }
+
+    let next_before_seq = items.last().map(|m| m.seq);
 
     (
         StatusCode::OK,
@@ -1496,6 +1512,7 @@ async fn list_messages(
             ok: true,
             conv_id,
             items,
+            next_before_seq,
         }),
     )
         .into_response()

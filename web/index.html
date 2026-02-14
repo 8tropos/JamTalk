@@ -204,6 +204,14 @@
           <button id="btn-list-messages">List messages for conv_id</button>
         </div>
         <div class="row">
+          <input id="msg-page-limit" placeholder="message page size" value="20" />
+          <input id="msg-before-seq" placeholder="before_seq cursor (optional)" value="" />
+        </div>
+        <div class="row">
+          <button id="btn-load-recent">Load recent page</button>
+          <button id="btn-load-older">Load older page</button>
+        </div>
+        <div class="row">
           <input id="refresh-interval" placeholder="refresh ms" value="5000" />
           <button id="btn-auto-refresh">Start auto-refresh</button>
         </div>

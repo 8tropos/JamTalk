@@ -589,6 +589,7 @@ async fn list_endpoints_return_data() {
     assert_eq!(convs.status(), 200);
 
     let messages = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
@@ -599,6 +600,18 @@ async fn list_endpoints_return_data() {
         .await
         .unwrap();
     assert_eq!(messages.status(), 200);
+
+    let messages_paged = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/messages?conv_id=%5B9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9%5D&limit=5&before_seq=50")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(messages_paged.status(), 200);
 }
 
 #[tokio::test]
