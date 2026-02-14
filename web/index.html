@@ -103,7 +103,6 @@
         </div>
         <div class="row">
           <button id="btn-blob-register">Register blob</button>
-          <button id="btn-send-refresh">Quick send + refresh timeline</button>
         </div>
         <label>blob signature bytes JSON</label>
         <textarea id="blob-sig" rows="2">[]</textarea>
@@ -145,7 +144,7 @@
         </div>
         <pre id="out-members"></pre>
 
-        <h3>Send message</h3>
+        <h3 id="composer-anchor">Send message</h3>
         <div class="row">
           <input id="msg-sender" placeholder="sender [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
           <input id="msg-nonce" placeholder="sender_nonce" value="1" />
@@ -165,7 +164,10 @@
         <input id="msg-bond-limit" placeholder="bond_limit" value="1000000" />
         <label>message signature bytes JSON</label>
         <textarea id="msg-sig" rows="2">[]</textarea>
-        <button id="btn-msg-send">Send message</button>
+        <div class="sticky-compose">
+          <button id="btn-msg-send">Send message</button>
+          <button id="btn-send-refresh">Quick send + refresh timeline</button>
+        </div>
         <pre id="out-send"></pre>
 
         <h3>Read ack</h3>

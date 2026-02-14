@@ -45,4 +45,5 @@ Harden auth/session safety and move from dev-only UX toward production-safe brow
 
 ### JT-024 (P1) — Mobile interaction polish pass
 - Touch target improvements + keyboard-safe spacing and sticky composer behavior
-- Status: ⏳ planned
+- Add visualViewport keyboard handling and focus scroll safety
+- Status: ✅ implemented

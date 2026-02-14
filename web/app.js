@@ -602,6 +602,27 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+function installMobileKeyboardSafety() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+
+  const update = () => {
+    const keyboardLikelyOpen = (window.innerHeight - vv.height) > 140;
+    document.body.classList.toggle('keyboard-open', keyboardLikelyOpen);
+  };
+
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  update();
+
+  document.addEventListener('focusin', (ev) => {
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+      setTimeout(() => t.scrollIntoView({ block: 'center', behavior: 'smooth' }), 120);
+    }
+  });
+}
+
 if (window.ethereum?.on) {
   window.ethereum.on('accountsChanged', (accounts) => {
     const wallet = accounts?.[0] || '';
@@ -619,5 +640,6 @@ if (window.ethereum?.on) {
   });
 }
 
+installMobileKeyboardSafety();
 refreshWalletCapability();
 renderSession();
