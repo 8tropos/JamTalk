@@ -91,8 +91,12 @@
         <p class="muted">Register plaintext as blob chunks, then use returned root/len in send flow.</p>
         <textarea id="blob-text" rows="3">hello</textarea>
         <div class="row">
+          <button id="btn-blob-preset">Use quick preset text</button>
           <button id="btn-dev-sign-blob">Dev sign blob</button>
+        </div>
+        <div class="row">
           <button id="btn-blob-register">Register blob</button>
+          <button id="btn-send-refresh">Quick send + refresh timeline</button>
         </div>
         <label>blob signature bytes JSON</label>
         <textarea id="blob-sig" rows="2">[]</textarea>
@@ -173,6 +177,7 @@
       </section>
     </main>
 
+    <div id="toast" class="toast hidden"></div>
     <script src="/app.js"></script>
   </body>
 </html>

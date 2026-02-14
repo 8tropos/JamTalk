@@ -95,3 +95,25 @@ pre {
   color: var(--muted);
   font-size: 12px;
 }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  background: #243463;
+  border: 1px solid #4a68bf;
+  color: #e8eeff;
+  padding: 10px 14px;
+  border-radius: 999px;
+  z-index: 20;
+}
+.toast.error {
+  background: #5c1f2d;
+  border-color: #d16b84;
+}
+.hidden { display: none; }
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

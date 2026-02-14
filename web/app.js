@@ -34,6 +34,29 @@ async function callJson(url, method = 'GET', body = null) {
   return { ok: res.ok, status: res.status, body: parsed };
 }
 
+function toast(msg, isError = false) {
+  const t = q('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  t.classList.toggle('error', isError);
+  setTimeout(() => t.classList.add('hidden'), 2200);
+}
+
+async function withPending(btnId, fn) {
+  const btn = q(btnId);
+  if (!btn) return fn();
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Working...';
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
 function devSeed() {
   return Number(q('dev-seed').value || '1');
 }
@@ -183,7 +206,7 @@ q('btn-conv-create').onclick = async () => {
   q('out-conv').textContent = JSON.stringify(await callJson('/v1/conversations', 'POST', payload), null, 2);
 };
 
-q('btn-msg-send').onclick = async () => {
+q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => {
   q('out-send').textContent = '...';
   const payload = {
     conv_id: JSON.parse(q('conv-id').value),
@@ -199,8 +222,14 @@ q('btn-msg-send').onclick = async () => {
     signature_ed25519: JSON.parse(q('msg-sig').value),
     current_slot: 21,
   };
-  q('out-send').textContent = JSON.stringify(await callJson('/v1/messages/send', 'POST', payload), null, 2);
-};
+  const res = await callJson('/v1/messages/send', 'POST', payload);
+  q('out-send').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    toast('Message sent');
+  } else {
+    toast('Send failed', true);
+  }
+});
 
 q('btn-read-ack').onclick = async () => {
   q('out-read').textContent = '...';
@@ -262,7 +291,7 @@ q('btn-dev-sign-blob').onclick = async () => {
   if (res.ok) q('blob-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
-q('btn-blob-register').onclick = async () => {
+q('btn-blob-register').onclick = async () => withPending('btn-blob-register', async () => {
   const payload = {
     sender: JSON.parse(q('msg-sender').value),
     text: q('blob-text').value,
@@ -275,8 +304,11 @@ q('btn-blob-register').onclick = async () => {
     q('msg-cipher-root').value = JSON.stringify(res.body.root);
     q('msg-cipher-len').value = String(res.body.total_len);
     q('msg-chunk-count').value = String(res.body.chunk_count);
+    toast('Blob registered');
+  } else {
+    toast('Blob register failed', true);
   }
-};
+});
 
 q('btn-dev-sign-conv').onclick = async () => {
   const res = await callJson('/v1/dev/sign/conversation', 'POST', {
@@ -330,8 +362,25 @@ q('btn-demo-bootstrap').onclick = async () => {
     q('conv-id').value = JSON.stringify(res.body.conv_id);
     q('read-seq').value = String(res.body.msg_seq);
     await refreshLists();
+    toast('Demo bootstrap ready');
+  } else {
+    toast('Demo bootstrap failed', true);
   }
 };
+
+q('btn-blob-preset').onclick = () => {
+  q('blob-text').value = `JamTalk quick message @ ${new Date().toLocaleTimeString()}`;
+  toast('Preset text ready');
+};
+
+q('btn-send-refresh').onclick = async () => withPending('btn-send-refresh', async () => {
+  await q('btn-dev-sign-blob').onclick();
+  await q('btn-blob-register').onclick();
+  await q('btn-dev-sign-send').onclick();
+  await q('btn-msg-send').onclick();
+  await refreshLists();
+  toast('Quick send + refresh done');
+});
 
 let refreshTimer = null;
 let autoRefreshWanted = false;

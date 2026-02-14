@@ -88,6 +88,13 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Add optional auto-scroll
 - Status: ✅ implemented
 
+### JT-016 (P0) — Compose UX polish + quick send flow
+- Add preset text helper for blob compose
+- Add success/error toasts
+- Disable action buttons while pending
+- Add one-tap send+refresh pipeline
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.
