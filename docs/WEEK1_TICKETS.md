@@ -60,6 +60,11 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Add UI buttons to auto-generate signatures and bootstrap device registration for local dev
 - Status: ✅ implemented
 
+### JT-011 (P0) — One-click end-to-end demo bootstrap
+- Add single API action to bootstrap 2 dev identities, conversation, blob, first message, and read-ack
+- Add UI button to trigger one-click bootstrap and auto-fill key fields
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.

@@ -14,14 +14,14 @@ use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::{
-    signing_bytes_ack_read, signing_bytes_create_conversation, signing_bytes_send_message,
-    signing_bytes_verify_personhood,
+    signing_bytes_ack_read, signing_bytes_create_conversation, signing_bytes_register_blob,
+    signing_bytes_send_message, signing_bytes_verify_personhood,
 };
 use crate::errors::ServiceError;
 use crate::{
     apply_work_result, refine_work_item, AckReadWI, ConversationType, CreateConversationWI,
-    DeviceRecord, Event, RegisterDeviceWI, SendMessageWI, ServiceState, VerifyPersonhoodWI,
-    WorkItem,
+    DeviceRecord, Event, RegisterBlobWI, RegisterDeviceWI, SendMessageWI, ServiceState,
+    VerifyPersonhoodWI, WorkItem,
 };
 
 #[derive(Clone)]
@@ -228,6 +228,19 @@ struct DevSignPoPVerifyRequest {
 struct DevSignResponse {
     ok: bool,
     signature_ed25519: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct DevBootstrapRequest {
+    seed_a: Option<u8>,
+    seed_b: Option<u8>,
+}
+
+#[derive(Serialize)]
+struct DevBootstrapResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    msg_seq: u64,
 }
 
 const UI_HTML: &str = include_str!("../web/index.html");
@@ -498,6 +511,148 @@ async fn dev_sign_pop(Json(req): Json<DevSignPoPVerifyRequest>) -> impl IntoResp
     (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
 }
 
+async fn dev_bootstrap_demo(
+    State(state): State<AppState>,
+    Json(req): Json<DevBootstrapRequest>,
+) -> impl IntoResponse {
+    let seed_a = req.seed_a.unwrap_or(1);
+    let seed_b = req.seed_b.unwrap_or(2);
+    let a = [seed_a; 32];
+    let b = [seed_b; 32];
+    let sk_a = dev_signing_key(seed_a);
+    let sk_b = dev_signing_key(seed_b);
+    let conv_id = [9u8; 32];
+
+    let mut s = state.service.lock().expect("state lock");
+
+    // Register both devices
+    for (account, sk, device_id) in [(a, &sk_a, [seed_a; 16]), (b, &sk_b, [seed_b; 16])] {
+        let mut reg = RegisterDeviceWI {
+            account,
+            device: DeviceRecord {
+                device_id,
+                enc_pubkey_x25519: [2u8; 32],
+                sig_pubkey_ed25519: sk.verifying_key().to_bytes(),
+                added_slot: 0,
+            },
+            signature_ed25519: vec![],
+        };
+        reg.signature_ed25519 = sk
+            .sign(&crate::auth::signing_bytes_register_device(&reg))
+            .to_bytes()
+            .to_vec();
+        if let Ok(wr) = refine_work_item(WorkItem::RegisterDevice(reg)) {
+            let _ = apply_work_result(&mut s, wr, 1);
+        }
+    }
+
+    // Create DM conversation
+    let mut cwi = CreateConversationWI {
+        conv_id,
+        conv_type: ConversationType::DM,
+        creator: a,
+        initial_participants: vec![a, b],
+        signature_ed25519: vec![],
+    };
+    cwi.signature_ed25519 = sk_a
+        .sign(&signing_bytes_create_conversation(&cwi))
+        .to_bytes()
+        .to_vec();
+    let cwr = refine_work_item(WorkItem::CreateConversation(cwi)).map_err(error_to_http);
+    if let Ok(cwr) = cwr {
+        if let Err(e) = apply_work_result(&mut s, cwr, 2) {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    }
+
+    // Register simple blob
+    let chunks = vec![b"hello".to_vec()];
+    let root = crate::crypto::merkle_root(&chunks);
+    let mut bwi = RegisterBlobWI {
+        root,
+        total_len: 5,
+        chunk_count: 1,
+        chunks,
+        sender: a,
+        signature_ed25519: vec![],
+    };
+    bwi.signature_ed25519 = sk_a
+        .sign(&signing_bytes_register_blob(&bwi))
+        .to_bytes()
+        .to_vec();
+    let bwr = refine_work_item(WorkItem::RegisterBlob(bwi)).map_err(error_to_http);
+    if let Ok(bwr) = bwr {
+        if let Err(e) = apply_work_result(&mut s, bwr, 3) {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    }
+
+    // Send message
+    let mut swi = SendMessageWI {
+        conv_id,
+        sender: a,
+        sender_nonce: 1,
+        cipher_root: root,
+        cipher_len: 5,
+        chunk_count: 1,
+        envelope_root: [8u8; 32],
+        recipients_hint_count: 1,
+        fee_limit: 1_000_000,
+        bond_limit: 1_000_000,
+        signature_ed25519: vec![],
+    };
+    swi.signature_ed25519 = sk_a
+        .sign(&signing_bytes_send_message(&swi))
+        .to_bytes()
+        .to_vec();
+    let swr = match refine_work_item(WorkItem::SendMessage(swi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+    let ev = match apply_work_result(&mut s, swr, 4) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let msg_seq = match ev {
+        Event::MessageCommitted { seq, .. } => seq,
+        _ => 1,
+    };
+
+    // Read ack
+    let mut rwi = AckReadWI {
+        conv_id,
+        reader: b,
+        seq: msg_seq,
+        signature_ed25519: vec![],
+    };
+    rwi.signature_ed25519 = sk_b
+        .sign(&signing_bytes_ack_read(&rwi))
+        .to_bytes()
+        .to_vec();
+    if let Ok(rwr) = refine_work_item(WorkItem::AckRead(rwi)) {
+        let _ = apply_work_result(&mut s, rwr, 5);
+    }
+
+    (
+        StatusCode::OK,
+        Json(DevBootstrapResponse {
+            ok: true,
+            conv_id,
+            msg_seq,
+        }),
+    )
+        .into_response()
+}
+
 async fn pop_verify(
     State(state): State<AppState>,
     Json(req): Json<VerifyPoPRequest>,
@@ -692,6 +847,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/dev/sign/send", post(dev_sign_send))
         .route("/v1/dev/sign/read", post(dev_sign_read))
         .route("/v1/dev/sign/pop", post(dev_sign_pop))
+        .route("/v1/dev/bootstrap-demo", post(dev_bootstrap_demo))
         .route("/v1/conversations", post(create_conversation))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))

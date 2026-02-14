@@ -243,4 +243,17 @@ q('btn-dev-sign-read').onclick = async () => {
   if (res.ok) q('read-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
+q('btn-demo-bootstrap').onclick = async () => {
+  q('out-session').textContent = '...';
+  const res = await callJson('/v1/dev/bootstrap-demo', 'POST', {
+    seed_a: 1,
+    seed_b: 2,
+  });
+  q('out-session').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    q('conv-id').value = JSON.stringify(res.body.conv_id);
+    q('read-seq').value = String(res.body.msg_seq);
+  }
+};
+
 renderSession();
