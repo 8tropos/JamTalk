@@ -421,6 +421,40 @@ q('btn-list-members').onclick = async () => {
   if (!res.ok) toast(apiErrorText(res, 'List members failed'), true);
 };
 
+q('btn-promote-member').onclick = async () => withPending('btn-promote-member', async () => {
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+    signature_ed25519: JSON.parse(q('member-sig').value),
+  };
+  const res = await callJson('/v1/conversations/promote-member', 'POST', payload);
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    toast('Member promoted to admin');
+    await q('btn-list-members').onclick();
+  } else {
+    toast(apiErrorText(res, 'Promote member failed'), true);
+  }
+});
+
+q('btn-demote-member').onclick = async () => withPending('btn-demote-member', async () => {
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+    signature_ed25519: JSON.parse(q('member-sig').value),
+  };
+  const res = await callJson('/v1/conversations/demote-member', 'POST', payload);
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    toast('Member demoted');
+    await q('btn-list-members').onclick();
+  } else {
+    toast(apiErrorText(res, 'Demote member failed'), true);
+  }
+});
+
 q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => {
   q('out-send').textContent = '...';
   const payload = {
@@ -568,6 +602,28 @@ q('btn-dev-sign-add-member').onclick = async () => {
 
 q('btn-dev-sign-remove-member').onclick = async () => {
   const res = await callJson('/v1/dev/sign/remove-member', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+  });
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-promote-member').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/promote-member', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+  });
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-demote-member').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/demote-member', 'POST', {
     seed: devSeed(),
     conv_id: JSON.parse(q('conv-id').value),
     actor: JSON.parse(q('member-actor').value),

@@ -200,6 +200,14 @@ struct RemoveMemberRequest {
     current_slot: Option<u64>,
 }
 
+#[derive(Deserialize)]
+struct RoleMutationRequest {
+    conv_id: [u8; 32],
+    actor: [u8; 32],
+    member: [u8; 32],
+    signature_ed25519: Vec<u8>,
+}
+
 #[derive(Serialize)]
 struct MemberMutationResponse {
     ok: bool,
@@ -388,6 +396,14 @@ struct DevSignAddMemberRequest {
 
 #[derive(Deserialize)]
 struct DevSignRemoveMemberRequest {
+    seed: u8,
+    conv_id: [u8; 32],
+    actor: [u8; 32],
+    member: [u8; 32],
+}
+
+#[derive(Deserialize)]
+struct DevSignRoleMutationRequest {
     seed: u8,
     conv_id: [u8; 32],
     actor: [u8; 32],
@@ -882,6 +898,44 @@ fn parse_conv_type(s: &str) -> Result<ConversationType, ServiceError> {
     }
 }
 
+fn signing_bytes_promote_member(req: &RoleMutationRequest) -> Vec<u8> {
+    let payload = serde_json::json!({
+        "conv_id": req.conv_id,
+        "actor": req.actor,
+        "member": req.member,
+        "action": "promote"
+    });
+    payload.to_string().into_bytes()
+}
+
+fn signing_bytes_demote_member(req: &RoleMutationRequest) -> Vec<u8> {
+    let payload = serde_json::json!({
+        "conv_id": req.conv_id,
+        "actor": req.actor,
+        "member": req.member,
+        "action": "demote"
+    });
+    payload.to_string().into_bytes()
+}
+
+fn verify_actor_signature(state: &ServiceState, actor: [u8; 32], sig: &[u8], msg: &[u8]) -> bool {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let Some(identity) = state.identity_by_account.get(&actor) else {
+        return false;
+    };
+    let Ok(signature) = Signature::from_slice(sig) else {
+        return false;
+    };
+
+    identity.devices.iter().any(|d| {
+        VerifyingKey::from_bytes(&d.sig_pubkey_ed25519)
+            .ok()
+            .map(|vk| vk.verify(msg, &signature).is_ok())
+            .unwrap_or(false)
+    })
+}
+
 fn api_error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<ApiError>) {
     (
         status,
@@ -1029,6 +1083,30 @@ async fn dev_sign_remove_member(Json(req): Json<DevSignRemoveMemberRequest>) -> 
         signature_ed25519: vec![],
     };
     let sig = sk.sign(&signing_bytes_remove_member(&wi)).to_bytes().to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+async fn dev_sign_promote_member(Json(req): Json<DevSignRoleMutationRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = RoleMutationRequest {
+        conv_id: req.conv_id,
+        actor: req.actor,
+        member: req.member,
+        signature_ed25519: vec![],
+    };
+    let sig = sk.sign(&signing_bytes_promote_member(&wi)).to_bytes().to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+async fn dev_sign_demote_member(Json(req): Json<DevSignRoleMutationRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = RoleMutationRequest {
+        conv_id: req.conv_id,
+        actor: req.actor,
+        member: req.member,
+        signature_ed25519: vec![],
+    };
+    let sig = sk.sign(&signing_bytes_demote_member(&wi)).to_bytes().to_vec();
     (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
 }
 
@@ -1579,6 +1657,157 @@ async fn remove_member(
         .into_response()
 }
 
+async fn promote_member(
+    State(state): State<AppState>,
+    Json(req): Json<RoleMutationRequest>,
+) -> impl IntoResponse {
+    let mut s = state.service.lock().expect("state lock");
+
+    if !verify_actor_signature(
+        &s,
+        req.actor,
+        &req.signature_ed25519,
+        &signing_bytes_promote_member(&req),
+    ) {
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_SIGNATURE_VERIFY_FAILED",
+            "signature verify failed",
+        )
+        .into_response();
+    }
+
+    let Some(conv_ro) = s.conversation_by_id.get(&req.conv_id) else {
+        return api_error(StatusCode::NOT_FOUND, "CONV_NOT_FOUND", "conversation not found")
+            .into_response();
+    };
+
+    if conv_ro.conv_type != ConversationType::Group {
+        return api_error(StatusCode::BAD_REQUEST, "CONV_NOT_GROUP", "role change only for groups")
+            .into_response();
+    }
+
+    let Some(actor_member) = s.member_by_conv_account.get(&(req.conv_id, req.actor)) else {
+        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_MEMBER", "actor not member")
+            .into_response();
+    };
+    if !actor_member.active || actor_member.role != 1 {
+        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_ADMIN", "actor not admin")
+            .into_response();
+    }
+
+    let Some(target_ro) = s.member_by_conv_account.get(&(req.conv_id, req.member)) else {
+        return api_error(StatusCode::BAD_REQUEST, "TARGET_NOT_MEMBER", "target not member")
+            .into_response();
+    };
+    if !target_ro.active {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "TARGET_INACTIVE",
+            "target member is inactive",
+        )
+        .into_response();
+    }
+
+    if let Some(target) = s.member_by_conv_account.get_mut(&(req.conv_id, req.member)) {
+        target.role = 1;
+    }
+    if let Some(conv) = s.conversation_by_id.get_mut(&req.conv_id) {
+        if !conv.admins.contains(&req.member) {
+            conv.admins.push(req.member);
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(MemberMutationResponse {
+            ok: true,
+            conv_id: req.conv_id,
+            member: req.member,
+        }),
+    )
+        .into_response()
+}
+
+async fn demote_member(
+    State(state): State<AppState>,
+    Json(req): Json<RoleMutationRequest>,
+) -> impl IntoResponse {
+    let mut s = state.service.lock().expect("state lock");
+
+    if !verify_actor_signature(
+        &s,
+        req.actor,
+        &req.signature_ed25519,
+        &signing_bytes_demote_member(&req),
+    ) {
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_SIGNATURE_VERIFY_FAILED",
+            "signature verify failed",
+        )
+        .into_response();
+    }
+
+    if !s.conversation_by_id.contains_key(&req.conv_id) {
+        return api_error(StatusCode::NOT_FOUND, "CONV_NOT_FOUND", "conversation not found")
+            .into_response();
+    }
+
+    let Some(actor_member) = s.member_by_conv_account.get(&(req.conv_id, req.actor)) else {
+        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_MEMBER", "actor not member")
+            .into_response();
+    };
+    if !actor_member.active || actor_member.role != 1 {
+        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_ADMIN", "actor not admin")
+            .into_response();
+    }
+
+    let Some(target_ro) = s.member_by_conv_account.get(&(req.conv_id, req.member)) else {
+        return api_error(StatusCode::BAD_REQUEST, "TARGET_NOT_MEMBER", "target not member")
+            .into_response();
+    };
+    if !target_ro.active {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "TARGET_INACTIVE",
+            "target member is inactive",
+        )
+        .into_response();
+    }
+
+    let admin_count = s
+        .member_by_conv_account
+        .iter()
+        .filter(|((cid, _), m)| *cid == req.conv_id && m.active && m.role == 1)
+        .count();
+    if target_ro.role == 1 && admin_count <= 1 {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "LAST_ADMIN",
+            "cannot demote last active admin",
+        )
+        .into_response();
+    }
+
+    if let Some(target) = s.member_by_conv_account.get_mut(&(req.conv_id, req.member)) {
+        target.role = 0;
+    }
+    if let Some(conv) = s.conversation_by_id.get_mut(&req.conv_id) {
+        conv.admins.retain(|a| *a != req.member);
+    }
+
+    (
+        StatusCode::OK,
+        Json(MemberMutationResponse {
+            ok: true,
+            conv_id: req.conv_id,
+            member: req.member,
+        }),
+    )
+        .into_response()
+}
+
 async fn send_message(
     State(state): State<AppState>,
     Json(req): Json<SendMessageRequest>,
@@ -1701,12 +1930,16 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/dev/sign/send", post(dev_sign_send))
         .route("/v1/dev/sign/add-member", post(dev_sign_add_member))
         .route("/v1/dev/sign/remove-member", post(dev_sign_remove_member))
+        .route("/v1/dev/sign/promote-member", post(dev_sign_promote_member))
+        .route("/v1/dev/sign/demote-member", post(dev_sign_demote_member))
         .route("/v1/dev/sign/read", post(dev_sign_read))
         .route("/v1/dev/sign/pop", post(dev_sign_pop))
         .route("/v1/dev/sign/blob", post(dev_sign_blob))
         .route("/v1/dev/bootstrap-demo", post(dev_bootstrap_demo))
         .route("/v1/conversations/add-member", post(add_member))
         .route("/v1/conversations/remove-member", post(remove_member))
+        .route("/v1/conversations/promote-member", post(promote_member))
+        .route("/v1/conversations/demote-member", post(demote_member))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))
         .with_state(state)

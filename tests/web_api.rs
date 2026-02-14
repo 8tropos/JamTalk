@@ -763,6 +763,68 @@ async fn conversation_member_add_remove_endpoints_happy_path() {
         .unwrap();
     assert_eq!(add_resp.status(), 200);
 
+    let promote_payload = {
+        let raw = serde_json::json!({
+            "conv_id": conv_id,
+            "actor": a1,
+            "member": a3,
+            "action": "promote"
+        })
+        .to_string();
+        let sig = sk1.sign(raw.as_bytes()).to_bytes().to_vec();
+        serde_json::json!({
+            "conv_id": conv_id,
+            "actor": a1,
+            "member": a3,
+            "signature_ed25519": sig,
+        })
+    };
+
+    let promote_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/conversations/promote-member")
+                .header("content-type", "application/json")
+                .body(Body::from(promote_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(promote_resp.status(), 200);
+
+    let demote_payload = {
+        let raw = serde_json::json!({
+            "conv_id": conv_id,
+            "actor": a1,
+            "member": a3,
+            "action": "demote"
+        })
+        .to_string();
+        let sig = sk1.sign(raw.as_bytes()).to_bytes().to_vec();
+        serde_json::json!({
+            "conv_id": conv_id,
+            "actor": a1,
+            "member": a3,
+            "signature_ed25519": sig,
+        })
+    };
+
+    let demote_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/conversations/demote-member")
+                .header("content-type", "application/json")
+                .body(Body::from(demote_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(demote_resp.status(), 200);
+
     let mut rwi = RemoveMemberWI {
         conv_id,
         actor: a1,

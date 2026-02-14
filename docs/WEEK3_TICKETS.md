@@ -23,7 +23,8 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 
 ### JT-028 (P1) — Role management endpoint (promote/demote admin)
 - Add admin role mutation endpoints with signature checks
-- Status: ⏳ planned
+- Add browser controls + dev sign helpers for promote/demote
+- Status: ✅ implemented
 
 ### JT-029 (P1) — Message pagination cursor API
 - Add paged message listing (`limit`, `before_seq`)
