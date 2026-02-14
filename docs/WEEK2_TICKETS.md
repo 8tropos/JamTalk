@@ -35,7 +35,8 @@ Harden auth/session safety and move from dev-only UX toward production-safe brow
 
 ### JT-022 (P1) — Conversation participant management endpoint
 - Add add/remove participant flow with auth checks
-- Status: ⏳ planned
+- Add dev sign helpers + UI controls for member mutations
+- Status: ✅ implemented
 
 ### JT-023 (P1) — Basic auth/session metrics endpoint
 - Add counters for challenge issued/verified/expired/replayed

@@ -41,6 +41,8 @@ Current API endpoints:
 - `POST /v1/conversations`
 - `GET /v1/messages?conv_id=<json-[u8;32]>`
 - `GET /v1/messages/detail?conv_id=<json-[u8;32]>&seq=<u64>`
+- `POST /v1/conversations/add-member`
+- `POST /v1/conversations/remove-member`
 - `POST /v1/messages/send`
 - `POST /v1/messages/read`
 

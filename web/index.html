@@ -126,6 +126,23 @@
         <button id="btn-conv-create">Create conversation</button>
         <pre id="out-conv"></pre>
 
+        <h3>Participants (JT-022)</h3>
+        <div class="row">
+          <input id="member-actor" placeholder="actor [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+          <input id="member-target" placeholder="member [u8;32] JSON" value="[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3]" />
+        </div>
+        <div class="row">
+          <button id="btn-dev-sign-add-member">Dev sign add member</button>
+          <button id="btn-dev-sign-remove-member">Dev sign remove member</button>
+        </div>
+        <label>member mutation signature bytes JSON</label>
+        <textarea id="member-sig" rows="2">[]</textarea>
+        <div class="row">
+          <button id="btn-add-member">Add member</button>
+          <button id="btn-remove-member">Remove member</button>
+        </div>
+        <pre id="out-members"></pre>
+
         <h3>Send message</h3>
         <div class="row">
           <input id="msg-sender" placeholder="sender [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />

@@ -17,14 +17,15 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 use crate::auth::{
-    signing_bytes_ack_read, signing_bytes_create_conversation, signing_bytes_register_blob,
-    signing_bytes_send_message, signing_bytes_verify_personhood,
+    signing_bytes_ack_read, signing_bytes_add_member, signing_bytes_create_conversation,
+    signing_bytes_register_blob, signing_bytes_remove_member, signing_bytes_send_message,
+    signing_bytes_verify_personhood,
 };
 use crate::errors::ServiceError;
 use crate::{
-    apply_work_result, refine_work_item, AckReadWI, ConversationType, CreateConversationWI,
-    DeviceRecord, Event, RegisterBlobWI, RegisterDeviceWI, SendMessageWI, ServiceState,
-    VerifyPersonhoodWI, WorkItem, CHUNK_BYTES,
+    apply_work_result, refine_work_item, AckReadWI, AddMemberWI, ConversationType,
+    CreateConversationWI, DeviceRecord, Event, RegisterBlobWI, RegisterDeviceWI, RemoveMemberWI,
+    SendMessageWI, ServiceState, VerifyPersonhoodWI, WorkItem, CHUNK_BYTES,
 };
 
 #[derive(Clone)]
@@ -150,6 +151,31 @@ struct CreateConversationRequest {
 struct CreateConversationResponse {
     ok: bool,
     conv_id: [u8; 32],
+}
+
+#[derive(Deserialize)]
+struct AddMemberRequest {
+    conv_id: [u8; 32],
+    actor: [u8; 32],
+    member: [u8; 32],
+    signature_ed25519: Vec<u8>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct RemoveMemberRequest {
+    conv_id: [u8; 32],
+    actor: [u8; 32],
+    member: [u8; 32],
+    signature_ed25519: Vec<u8>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct MemberMutationResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    member: [u8; 32],
 }
 
 #[derive(Deserialize)]
@@ -301,6 +327,22 @@ struct DevSignSendMessageRequest {
     recipients_hint_count: u16,
     fee_limit: u128,
     bond_limit: u128,
+}
+
+#[derive(Deserialize)]
+struct DevSignAddMemberRequest {
+    seed: u8,
+    conv_id: [u8; 32],
+    actor: [u8; 32],
+    member: [u8; 32],
+}
+
+#[derive(Deserialize)]
+struct DevSignRemoveMemberRequest {
+    seed: u8,
+    conv_id: [u8; 32],
+    actor: [u8; 32],
+    member: [u8; 32],
 }
 
 #[derive(Deserialize)]
@@ -832,6 +874,30 @@ async fn dev_sign_send(Json(req): Json<DevSignSendMessageRequest>) -> impl IntoR
     (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
 }
 
+async fn dev_sign_add_member(Json(req): Json<DevSignAddMemberRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = AddMemberWI {
+        conv_id: req.conv_id,
+        actor: req.actor,
+        member: req.member,
+        signature_ed25519: vec![],
+    };
+    let sig = sk.sign(&signing_bytes_add_member(&wi)).to_bytes().to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+async fn dev_sign_remove_member(Json(req): Json<DevSignRemoveMemberRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = RemoveMemberWI {
+        conv_id: req.conv_id,
+        actor: req.actor,
+        member: req.member,
+        signature_ed25519: vec![],
+    };
+    let sig = sk.sign(&signing_bytes_remove_member(&wi)).to_bytes().to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
 async fn dev_sign_read(Json(req): Json<DevSignReadAckRequest>) -> impl IntoResponse {
     let sk = dev_signing_key(req.seed);
     let wi = AckReadWI {
@@ -1258,6 +1324,80 @@ async fn create_conversation(
         .into_response()
 }
 
+async fn add_member(
+    State(state): State<AppState>,
+    Json(req): Json<AddMemberRequest>,
+) -> impl IntoResponse {
+    let wi = AddMemberWI {
+        conv_id: req.conv_id,
+        actor: req.actor,
+        member: req.member,
+        signature_ed25519: req.signature_ed25519,
+    };
+
+    let wr = match refine_work_item(WorkItem::AddMember(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    if let Err(e) = apply_work_result(&mut s, wr, slot) {
+        let (status, msg) = error_to_http(e);
+        return (status, msg).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(MemberMutationResponse {
+            ok: true,
+            conv_id: req.conv_id,
+            member: req.member,
+        }),
+    )
+        .into_response()
+}
+
+async fn remove_member(
+    State(state): State<AppState>,
+    Json(req): Json<RemoveMemberRequest>,
+) -> impl IntoResponse {
+    let wi = RemoveMemberWI {
+        conv_id: req.conv_id,
+        actor: req.actor,
+        member: req.member,
+        signature_ed25519: req.signature_ed25519,
+    };
+
+    let wr = match refine_work_item(WorkItem::RemoveMember(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    if let Err(e) = apply_work_result(&mut s, wr, slot) {
+        let (status, msg) = error_to_http(e);
+        return (status, msg).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(MemberMutationResponse {
+            ok: true,
+            conv_id: req.conv_id,
+            member: req.member,
+        }),
+    )
+        .into_response()
+}
+
 async fn send_message(
     State(state): State<AppState>,
     Json(req): Json<SendMessageRequest>,
@@ -1375,10 +1515,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/dev/sign/challenge", post(dev_sign_challenge))
         .route("/v1/dev/sign/conversation", post(dev_sign_conversation))
         .route("/v1/dev/sign/send", post(dev_sign_send))
+        .route("/v1/dev/sign/add-member", post(dev_sign_add_member))
+        .route("/v1/dev/sign/remove-member", post(dev_sign_remove_member))
         .route("/v1/dev/sign/read", post(dev_sign_read))
         .route("/v1/dev/sign/pop", post(dev_sign_pop))
         .route("/v1/dev/sign/blob", post(dev_sign_blob))
         .route("/v1/dev/bootstrap-demo", post(dev_bootstrap_demo))
+        .route("/v1/conversations/add-member", post(add_member))
+        .route("/v1/conversations/remove-member", post(remove_member))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))
         .with_state(state)

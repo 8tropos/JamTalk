@@ -320,6 +320,42 @@ q('btn-conv-create').onclick = async () => {
   q('out-conv').textContent = JSON.stringify(await callJson('/v1/conversations', 'POST', payload), null, 2);
 };
 
+q('btn-add-member').onclick = async () => withPending('btn-add-member', async () => {
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+    signature_ed25519: JSON.parse(q('member-sig').value),
+    current_slot: 22,
+  };
+  const res = await callJson('/v1/conversations/add-member', 'POST', payload);
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    toast('Member added');
+    await refreshLists();
+  } else {
+    toast(apiErrorText(res, 'Add member failed'), true);
+  }
+});
+
+q('btn-remove-member').onclick = async () => withPending('btn-remove-member', async () => {
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+    signature_ed25519: JSON.parse(q('member-sig').value),
+    current_slot: 23,
+  };
+  const res = await callJson('/v1/conversations/remove-member', 'POST', payload);
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    toast('Member removed');
+    await refreshLists();
+  } else {
+    toast(apiErrorText(res, 'Remove member failed'), true);
+  }
+});
+
 q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => {
   q('out-send').textContent = '...';
   const payload = {
@@ -452,6 +488,28 @@ q('btn-dev-sign-send').onclick = async () => {
   });
   q('out-send').textContent = JSON.stringify(res, null, 2);
   if (res.ok) q('msg-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-add-member').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/add-member', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+  });
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-remove-member').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/remove-member', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    actor: JSON.parse(q('member-actor').value),
+    member: JSON.parse(q('member-target').value),
+  });
+  q('out-members').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
 q('btn-dev-sign-read').onclick = async () => {

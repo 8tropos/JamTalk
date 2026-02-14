@@ -1,13 +1,14 @@
 use axum::{body::Body, http::Request};
 use ed25519_dalek::{Signer, SigningKey};
 use jam_messenger::auth::{
-    signing_bytes_ack_read, signing_bytes_create_conversation, signing_bytes_register_device,
-    signing_bytes_send_message, signing_bytes_verify_personhood,
+    signing_bytes_ack_read, signing_bytes_add_member, signing_bytes_create_conversation,
+    signing_bytes_register_device, signing_bytes_remove_member, signing_bytes_send_message,
+    signing_bytes_verify_personhood,
 };
 use jam_messenger::{
-    apply_work_result, crypto, refine_work_item, web_api, AckReadWI, BlobMeta,
-    CreateConversationWI, DeviceRecord, RegisterDeviceWI, SendMessageWI, ServiceState,
-    VerifyPersonhoodWI, WorkItem,
+    apply_work_result, crypto, refine_work_item, web_api, AckReadWI, AddMemberWI, BlobMeta,
+    CreateConversationWI, DeviceRecord, PersonhoodState, RegisterDeviceWI, RemoveMemberWI,
+    SendMessageWI, ServiceState, VerifyPersonhoodWI, WorkItem,
 };
 use k256::ecdsa::SigningKey as SecpSigningKey;
 use sha3::{Digest, Keccak256};
@@ -506,6 +507,166 @@ async fn message_detail_endpoint_not_found_returns_structured_error() {
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["ok"], false);
     assert_eq!(v["error"]["code"], "MSG_NOT_FOUND");
+}
+
+#[tokio::test]
+async fn conversation_member_add_remove_endpoints_happy_path() {
+    let mut state = ServiceState::default();
+    let a1 = [1u8; 32];
+    let a2 = [2u8; 32];
+    let a3 = [3u8; 32];
+    let sk1 = SigningKey::from_bytes(&[1u8; 32]);
+    let sk2 = SigningKey::from_bytes(&[2u8; 32]);
+
+    let mut reg1 = RegisterDeviceWI {
+        account: a1,
+        device: DeviceRecord {
+            device_id: [1u8; 16],
+            enc_pubkey_x25519: [2u8; 32],
+            sig_pubkey_ed25519: sk1.verifying_key().to_bytes(),
+            added_slot: 0,
+        },
+        signature_ed25519: vec![],
+    };
+    reg1.signature_ed25519 = sk1
+        .sign(&signing_bytes_register_device(&reg1))
+        .to_bytes()
+        .to_vec();
+    let rr1 = refine_work_item(WorkItem::RegisterDevice(reg1)).unwrap();
+    apply_work_result(&mut state, rr1, 1).unwrap();
+
+    let mut reg2 = RegisterDeviceWI {
+        account: a2,
+        device: DeviceRecord {
+            device_id: [2u8; 16],
+            enc_pubkey_x25519: [2u8; 32],
+            sig_pubkey_ed25519: sk2.verifying_key().to_bytes(),
+            added_slot: 0,
+        },
+        signature_ed25519: vec![],
+    };
+    reg2.signature_ed25519 = sk2
+        .sign(&signing_bytes_register_device(&reg2))
+        .to_bytes()
+        .to_vec();
+    let rr2 = refine_work_item(WorkItem::RegisterDevice(reg2)).unwrap();
+    apply_work_result(&mut state, rr2, 1).unwrap();
+
+    state.personhood_by_account.insert(
+        a1,
+        PersonhoodState {
+            provider: "test".to_string(),
+            verified_at_slot: 1,
+            verified_until_slot: 100,
+            nullifier: [9u8; 32],
+        },
+    );
+
+    let app = web_api::build_router(web_api::AppState::new(state));
+
+    let conv_id = [7u8; 32];
+    let mut cwi = CreateConversationWI {
+        conv_id,
+        conv_type: jam_messenger::ConversationType::Group,
+        creator: a1,
+        initial_participants: vec![a1, a2],
+        signature_ed25519: vec![],
+    };
+    cwi.signature_ed25519 = sk1
+        .sign(&signing_bytes_create_conversation(&cwi))
+        .to_bytes()
+        .to_vec();
+
+    let conv_payload = serde_json::json!({
+        "conv_id": conv_id,
+        "conv_type": "group",
+        "creator": a1,
+        "initial_participants": [a1,a2],
+        "signature_ed25519": cwi.signature_ed25519,
+        "current_slot": 2
+    });
+
+    let conv_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/conversations")
+                .header("content-type", "application/json")
+                .body(Body::from(conv_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(conv_resp.status(), 200);
+
+    let mut awi = AddMemberWI {
+        conv_id,
+        actor: a1,
+        member: a3,
+        signature_ed25519: vec![],
+    };
+    awi.signature_ed25519 = sk1.sign(&signing_bytes_add_member(&awi)).to_bytes().to_vec();
+
+    let add_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/conversations/add-member")
+                .header("content-type", "application/json")
+                .body(
+                    Body::from(
+                        serde_json::json!({
+                            "conv_id": conv_id,
+                            "actor": a1,
+                            "member": a3,
+                            "signature_ed25519": awi.signature_ed25519,
+                            "current_slot": 3
+                        })
+                        .to_string(),
+                    ),
+                )
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(add_resp.status(), 200);
+
+    let mut rwi = RemoveMemberWI {
+        conv_id,
+        actor: a1,
+        member: a3,
+        signature_ed25519: vec![],
+    };
+    rwi.signature_ed25519 = sk1
+        .sign(&signing_bytes_remove_member(&rwi))
+        .to_bytes()
+        .to_vec();
+
+    let remove_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/conversations/remove-member")
+                .header("content-type", "application/json")
+                .body(
+                    Body::from(
+                        serde_json::json!({
+                            "conv_id": conv_id,
+                            "actor": a1,
+                            "member": a3,
+                            "signature_ed25519": rwi.signature_ed25519,
+                            "current_slot": 4
+                        })
+                        .to_string(),
+                    ),
+                )
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(remove_resp.status(), 200);
 }
 
 #[tokio::test]
