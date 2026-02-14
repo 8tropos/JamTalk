@@ -49,7 +49,7 @@ Current API endpoints:
 - `POST /v1/conversations/promote-member`
 - `POST /v1/conversations/demote-member`
 - `GET /v1/conversations/members?conv_id=<json-[u8;32]>`
-- `POST /v1/messages/send`
+- `POST /v1/messages/send` (supports optional `Idempotency-Key` header for safe retries)
 - `POST /v1/messages/read`
 
 Security baseline:

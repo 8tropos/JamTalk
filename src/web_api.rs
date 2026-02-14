@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Query, State},
-    http::{header, HeaderValue, Response, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     middleware,
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -15,6 +15,7 @@ use rand_core::{OsRng, RngCore};
 use ed25519_dalek::{Signer, SigningKey};
 use k256::ecdsa::{RecoveryId, Signature as SecpSignature, VerifyingKey};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use sha3::{Digest, Keccak256};
 
 use crate::auth::{
@@ -36,12 +37,21 @@ pub struct AppState {
     pub auth_consumed_challenges: Arc<Mutex<BTreeSet<String>>>,
     pub auth_metrics: Arc<Mutex<AuthMetrics>>,
     pub auth_rate_buckets: Arc<Mutex<BTreeMap<String, RateBucket>>>,
+    pub send_idempotency: Arc<Mutex<BTreeMap<String, SendIdempotencyEntry>>>,
 }
 
 #[derive(Clone)]
 pub struct RateBucket {
     pub tokens: f64,
     pub last_refill_unix_s: u64,
+}
+
+#[derive(Clone)]
+pub struct SendIdempotencyEntry {
+    pub request_hash: String,
+    pub conv_id: [u8; 32],
+    pub seq: u64,
+    pub msg_id: [u8; 32],
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -67,6 +77,7 @@ impl AppState {
             auth_consumed_challenges: Arc::new(Mutex::new(BTreeSet::new())),
             auth_metrics: Arc::new(Mutex::new(AuthMetrics::default())),
             auth_rate_buckets: Arc::new(Mutex::new(BTreeMap::new())),
+            send_idempotency: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -248,6 +259,7 @@ struct SendMessageResponse {
     conv_id: [u8; 32],
     seq: u64,
     msg_id: [u8; 32],
+    idempotency_replayed: bool,
 }
 
 #[derive(Deserialize)]
@@ -981,6 +993,25 @@ fn parse_conv_type(s: &str) -> Result<ConversationType, ServiceError> {
         "group" => Ok(ConversationType::Group),
         _ => Err(ServiceError::Bounds("invalid conv_type")),
     }
+}
+
+fn send_request_fingerprint(req: &SendMessageRequest) -> String {
+    let payload = serde_json::json!({
+        "conv_id": req.conv_id,
+        "sender": req.sender,
+        "sender_nonce": req.sender_nonce,
+        "cipher_root": req.cipher_root,
+        "cipher_len": req.cipher_len,
+        "chunk_count": req.chunk_count,
+        "envelope_root": req.envelope_root,
+        "recipients_hint_count": req.recipients_hint_count,
+        "fee_limit": req.fee_limit,
+        "bond_limit": req.bond_limit,
+        "signature_ed25519": req.signature_ed25519,
+    });
+    let mut h = Sha256::new();
+    h.update(payload.to_string().as_bytes());
+    hex::encode(h.finalize())
 }
 
 fn signing_bytes_promote_member(req: &RoleMutationRequest) -> Vec<u8> {
@@ -1963,8 +1994,59 @@ async fn demote_member(
 
 async fn send_message(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<SendMessageRequest>,
 ) -> impl IntoResponse {
+    let idempotency_key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    let request_hash = send_request_fingerprint(&req);
+    let sender_scope = hex::encode(req.sender);
+
+    if let Some(k) = &idempotency_key {
+        if k.len() > 128 {
+            return api_error(
+                StatusCode::BAD_REQUEST,
+                "IDEMPOTENCY_KEY_INVALID",
+                "idempotency key too long",
+            )
+            .into_response();
+        }
+
+        let scoped = format!("send:{}:{}", &sender_scope, k);
+        let req_hash = request_hash.clone();
+        if let Some(existing) = state
+            .send_idempotency
+            .lock()
+            .expect("idempotency lock")
+            .get(&scoped)
+            .cloned()
+        {
+            if existing.request_hash != req_hash {
+                return api_error(
+                    StatusCode::CONFLICT,
+                    "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST",
+                    "idempotency key already used with different payload",
+                )
+                .into_response();
+            }
+
+            return (
+                StatusCode::OK,
+                Json(SendMessageResponse {
+                    ok: true,
+                    conv_id: existing.conv_id,
+                    seq: existing.seq,
+                    msg_id: existing.msg_id,
+                    idempotency_replayed: true,
+                }),
+            )
+                .into_response();
+        }
+    }
+
     let wi = SendMessageWI {
         conv_id: req.conv_id,
         sender: req.sender,
@@ -2002,16 +2084,37 @@ async fn send_message(
             conv_id,
             seq,
             msg_id,
-        } => (
-            StatusCode::OK,
-            Json(SendMessageResponse {
-                ok: true,
-                conv_id,
-                seq,
-                msg_id,
-            }),
-        )
-            .into_response(),
+        } => {
+            if let Some(k) = idempotency_key {
+                let scoped = format!("send:{}:{}", &sender_scope, k);
+                let req_hash = request_hash.clone();
+                state
+                    .send_idempotency
+                    .lock()
+                    .expect("idempotency lock")
+                    .insert(
+                        scoped,
+                        SendIdempotencyEntry {
+                            request_hash: req_hash,
+                            conv_id,
+                            seq,
+                            msg_id,
+                        },
+                    );
+            }
+
+            (
+                StatusCode::OK,
+                Json(SendMessageResponse {
+                    ok: true,
+                    conv_id,
+                    seq,
+                    msg_id,
+                    idempotency_replayed: false,
+                }),
+            )
+                .into_response()
+        },
         _ => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL_UNEXPECTED_EVENT",

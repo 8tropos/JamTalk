@@ -14,7 +14,7 @@ Close key closed-beta backend gaps: delivery/read status visibility, safe client
 - Add optional `Idempotency-Key` handling on `POST /v1/messages/send`
 - Return original send result for safe retries with same payload/key
 - Reject key reuse with mismatched payload
-- Status: ⏳ planned
+- Status: ✅ implemented
 
 ### JT-035 (P1) — Auth abuse dashboard + ops controls
 - Add `GET /v1/ops/rate-limits` for bucket visibility

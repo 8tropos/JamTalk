@@ -1132,3 +1132,165 @@ async fn message_status_endpoint_reports_readers() {
     assert_eq!(json["read_count"], 1);
     assert_eq!(json["member_count"], 2);
 }
+
+#[tokio::test]
+async fn send_message_idempotency_key_replays_original_response() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/dev/bootstrap-demo")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"seed_a":11,"seed_b":12}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let conv_id = [9u8; 32];
+    let sender = [11u8; 32];
+    let sk = SigningKey::from_bytes(&[11u8; 32]);
+    let cipher_root = crypto::merkle_root(&[b"hello".to_vec()]);
+    let mut wi = SendMessageWI {
+        conv_id,
+        sender,
+        sender_nonce: 2,
+        cipher_root,
+        cipher_len: 5,
+        chunk_count: 1,
+        envelope_root: [8u8; 32],
+        recipients_hint_count: 1,
+        fee_limit: 1_000_000,
+        bond_limit: 1_000_000,
+        signature_ed25519: vec![],
+    };
+    wi.signature_ed25519 = sk.sign(&signing_bytes_send_message(&wi)).to_bytes().to_vec();
+
+    let payload = serde_json::json!({
+        "conv_id": conv_id,
+        "sender": sender,
+        "sender_nonce": 2,
+        "cipher_root": cipher_root,
+        "cipher_len": 5,
+        "chunk_count": 1,
+        "envelope_root": wi.envelope_root,
+        "recipients_hint_count": 1,
+        "fee_limit": 1000000,
+        "bond_limit": 1000000,
+        "signature_ed25519": wi.signature_ed25519,
+        "current_slot": 5
+    });
+
+    let first = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/messages/send")
+                .header("content-type", "application/json")
+                .header("idempotency-key", "retry-1")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 200);
+
+    let second = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/messages/send")
+                .header("content-type", "application/json")
+                .header("idempotency-key", "retry-1")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.status(), 200);
+
+    let body = to_bytes(second.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["idempotency_replayed"], true);
+}
+
+#[tokio::test]
+async fn send_message_idempotency_key_rejects_different_payload() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/dev/bootstrap-demo")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"seed_a":21,"seed_b":22}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let conv_id = [9u8; 32];
+    let sender = [21u8; 32];
+    let sk = SigningKey::from_bytes(&[21u8; 32]);
+    let cipher_root = crypto::merkle_root(&[b"hello".to_vec()]);
+
+    for nonce in [2u64, 3u64] {
+        let mut wi = SendMessageWI {
+            conv_id,
+            sender,
+            sender_nonce: nonce,
+            cipher_root,
+            cipher_len: 5,
+            chunk_count: 1,
+            envelope_root: [8u8; 32],
+            recipients_hint_count: 1,
+            fee_limit: 1_000_000,
+            bond_limit: 1_000_000,
+            signature_ed25519: vec![],
+        };
+        wi.signature_ed25519 = sk.sign(&signing_bytes_send_message(&wi)).to_bytes().to_vec();
+
+        let payload = serde_json::json!({
+            "conv_id": conv_id,
+            "sender": sender,
+            "sender_nonce": nonce,
+            "cipher_root": cipher_root,
+            "cipher_len": 5,
+            "chunk_count": 1,
+            "envelope_root": wi.envelope_root,
+            "recipients_hint_count": 1,
+            "fee_limit": 1000000,
+            "bond_limit": 1000000,
+            "signature_ed25519": wi.signature_ed25519,
+            "current_slot": 5 + nonce
+        });
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/messages/send")
+                    .header("content-type", "application/json")
+                    .header("idempotency-key", "retry-conflict")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        if nonce == 2 {
+            assert_eq!(resp.status(), 200);
+        } else {
+            assert_eq!(resp.status(), 409);
+        }
+    }
+}
