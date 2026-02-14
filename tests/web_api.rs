@@ -32,6 +32,28 @@ fn evm_address_from_signing_key(sk: &SecpSigningKey) -> String {
 }
 
 #[tokio::test]
+async fn security_headers_are_applied() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let headers = resp.headers();
+    assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+    assert_eq!(headers.get("x-frame-options").unwrap(), "DENY");
+    assert!(headers.get("content-security-policy").is_some());
+}
+
+#[tokio::test]
 async fn ui_shell_routes_are_served() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

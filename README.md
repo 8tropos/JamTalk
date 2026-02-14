@@ -51,6 +51,14 @@ Current API endpoints:
 - `POST /v1/messages/send`
 - `POST /v1/messages/read`
 
+Security baseline:
+- CSP: `default-src 'self'` (+ strict script/style/connect/frame/object restrictions)
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Resource-Policy: same-origin`
+
 ## Modules
 
 - `types.rs` — protocol constants, WI/result/event structs

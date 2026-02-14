@@ -5,7 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, HeaderValue, Response, StatusCode},
+    middleware,
     response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
@@ -1922,6 +1923,44 @@ async fn read_ack(
         .into_response()
 }
 
+async fn apply_security_headers<B>(mut res: Response<B>) -> Response<B> {
+    let headers = res.headers_mut();
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-permitted-cross-domain-policies"),
+        HeaderValue::from_static("none"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("cross-origin-resource-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+
+    // Browser shell: strict baseline with same-origin script/style.
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        ),
+    );
+
+    res
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(ui_index))
@@ -1959,6 +1998,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/conversations/demote-member", post(demote_member))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))
+        .layer(middleware::map_response(apply_security_headers))
         .with_state(state)
 }
 

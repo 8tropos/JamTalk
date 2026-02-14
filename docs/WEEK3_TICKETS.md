@@ -33,7 +33,8 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 
 ### JT-030 (P1) — Security headers / CSP baseline
 - Add restrictive-but-working headers for web shell
-- Status: ⏳ planned
+- Add baseline security headers for API responses too
+- Status: ✅ implemented
 
 ### JT-031 (P1) — Rate limit scaffold for auth endpoints
 - Add in-memory token-bucket style limiter for challenge/verify
