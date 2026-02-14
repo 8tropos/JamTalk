@@ -18,4 +18,4 @@ Operational hardening for multi-environment rollout and resilient wallet session
 ### JT-038 (P1) — Ops runbook + deployment configuration docs
 - Add environment/deployment and incident handling runbook in `docs/`
 - Keep README aligned with new profile/CORS/auth refresh behavior
-- Status: ⏳ planned
+- Status: ✅ implemented

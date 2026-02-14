@@ -806,8 +806,12 @@ async fn auth_refresh(
     Json(req): Json<RefreshRequest>,
 ) -> impl IntoResponse {
     if req.wallet.trim().is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "AUTH_WALLET_REQUIRED", "wallet required")
-            .into_response();
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "AUTH_WALLET_REQUIRED",
+            "wallet required",
+        )
+        .into_response();
     }
     if req.current_challenge.trim().is_empty() {
         return api_error(

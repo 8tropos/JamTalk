@@ -66,6 +66,10 @@ Security baseline:
 - Auth endpoint rate-limit scaffold (in-memory token bucket; 429 on exceed)
 - CORS allowlist (set via `JAMTALK_ALLOWED_ORIGINS`, profile via `JAMTALK_ENV_PROFILE`)
 
+## Operations
+
+- Deployment + incident runbook: `docs/DEPLOYMENT_RUNBOOK.md`
+
 ## Modules
 
 - `types.rs` — protocol constants, WI/result/event structs
