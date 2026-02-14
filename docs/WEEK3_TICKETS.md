@@ -13,7 +13,8 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 ### JT-026 (P0) — Wallet network guardrails
 - Detect/validate allowed EVM chain IDs in UI auth flow
 - Reject unsupported chain before challenge verify
-- Status: ⏳ planned
+- Add configurable allowed chain list in browser shell
+- Status: ✅ implemented
 
 ### JT-027 (P0) — Conversation participant listing endpoint
 - Add `GET /v1/conversations/members?conv_id=...`

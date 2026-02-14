@@ -76,7 +76,20 @@ function setWalletCapability(kind, text) {
   box.textContent = text;
 }
 
-function refreshWalletCapability() {
+function allowedChainIds() {
+  return (q('evm-allowed-chains')?.value || '')
+    .split(',')
+    .map(s => Number(s.trim()))
+    .filter(n => Number.isFinite(n) && n > 0);
+}
+
+async function currentChainIdDec() {
+  if (!window.ethereum) return null;
+  const hex = await window.ethereum.request({ method: 'eth_chainId' });
+  return Number.parseInt(hex, 16);
+}
+
+async function refreshWalletCapability() {
   const hasEvm = !!window.ethereum;
   const evmBtns = ['btn-connect-evm', 'btn-evm-sign-verify'];
   evmBtns.forEach((id) => {
@@ -85,7 +98,14 @@ function refreshWalletCapability() {
   });
 
   if (hasEvm) {
-    setWalletCapability('ok', 'Injected EVM wallet detected. You can connect and use personal_sign verification.');
+    const cid = await currentChainIdDec();
+    if (Number.isFinite(cid)) q('evm-chain-id').value = String(cid);
+    const allowed = allowedChainIds();
+    if (cid && allowed.length && !allowed.includes(cid)) {
+      setWalletCapability('warn', `Injected EVM wallet detected on chain ${cid}, but it is not in allowed list (${allowed.join(', ')}).`);
+    } else {
+      setWalletCapability('ok', 'Injected EVM wallet detected. You can connect and use personal_sign verification.');
+    }
   } else {
     setWalletCapability('warn', 'No injected EVM wallet detected. Install MetaMask/Rabby in this browser, or use manual/dev signing flow below.');
   }
@@ -109,13 +129,18 @@ q('btn-connect-evm').onclick = async () => {
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     const wallet = accounts?.[0];
     if (!wallet) return;
+    const cid = await currentChainIdDec();
+    if (Number.isFinite(cid)) q('evm-chain-id').value = String(cid);
+
     q('wallet').value = wallet;
     const s = readSession();
     s.wallet = wallet;
     s.walletType = 'evm';
+    s.chainId = cid;
     s.connectedAt = new Date().toISOString();
     writeSession(s);
     renderSession();
+    await refreshWalletCapability();
     toast('EVM wallet connected');
   } catch (e) {
     toast('Wallet connect failed', true);
@@ -281,6 +306,15 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
     toast('Connect an EVM wallet first', true);
     return;
   }
+
+  const cid = await currentChainIdDec();
+  if (Number.isFinite(cid)) q('evm-chain-id').value = String(cid);
+  const allowed = allowedChainIds();
+  if (Number.isFinite(cid) && allowed.length && !allowed.includes(cid)) {
+    toast(`Unsupported chain ${cid}. Allowed: ${allowed.join(', ')}`, true);
+    return;
+  }
+
   let challenge = q('challenge').value.trim();
   if (!challenge) {
     const c = await callJson('/v1/auth/challenge', 'POST', { wallet });
@@ -658,6 +692,10 @@ if (window.ethereum?.on) {
     refreshWalletCapability();
   });
 }
+
+q('evm-allowed-chains')?.addEventListener('change', () => {
+  refreshWalletCapability();
+});
 
 installMobileKeyboardSafety();
 refreshWalletCapability();
