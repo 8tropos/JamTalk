@@ -35,6 +35,13 @@ pub struct AppState {
     pub auth_challenges: Arc<Mutex<BTreeMap<String, AuthChallengeEntry>>>,
     pub auth_consumed_challenges: Arc<Mutex<BTreeSet<String>>>,
     pub auth_metrics: Arc<Mutex<AuthMetrics>>,
+    pub auth_rate_buckets: Arc<Mutex<BTreeMap<String, RateBucket>>>,
+}
+
+#[derive(Clone)]
+pub struct RateBucket {
+    pub tokens: f64,
+    pub last_refill_unix_s: u64,
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -59,11 +66,14 @@ impl AppState {
             auth_challenges: Arc::new(Mutex::new(BTreeMap::new())),
             auth_consumed_challenges: Arc::new(Mutex::new(BTreeSet::new())),
             auth_metrics: Arc::new(Mutex::new(AuthMetrics::default())),
+            auth_rate_buckets: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
 
 const AUTH_CHALLENGE_TTL_S: u64 = 300;
+const AUTH_RATE_BUCKET_CAPACITY: f64 = 6.0;
+const AUTH_RATE_BUCKET_REFILL_PER_S: f64 = 0.2; // 12 req/min per key
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -529,6 +539,26 @@ fn now_unix_s() -> u64 {
         .unwrap_or(0)
 }
 
+fn consume_auth_rate_token(state: &AppState, key: &str) -> bool {
+    let now = now_unix_s();
+    let mut buckets = state.auth_rate_buckets.lock().expect("rate lock");
+    let bucket = buckets.entry(key.to_string()).or_insert(RateBucket {
+        tokens: AUTH_RATE_BUCKET_CAPACITY,
+        last_refill_unix_s: now,
+    });
+
+    let elapsed = now.saturating_sub(bucket.last_refill_unix_s) as f64;
+    bucket.tokens = (bucket.tokens + elapsed * AUTH_RATE_BUCKET_REFILL_PER_S)
+        .min(AUTH_RATE_BUCKET_CAPACITY);
+    bucket.last_refill_unix_s = now;
+
+    if bucket.tokens < 1.0 {
+        return false;
+    }
+    bucket.tokens -= 1.0;
+    true
+}
+
 fn evm_personal_sign_hash(message: &str) -> [u8; 32] {
     let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
     let mut hasher = Keccak256::new();
@@ -610,6 +640,15 @@ async fn auth_challenge(
             .into_response();
     }
 
+    if !consume_auth_rate_token(&state, &format!("challenge:{}", req.wallet)) {
+        return api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "AUTH_RATE_LIMITED",
+            "too many auth requests, try again shortly",
+        )
+        .into_response();
+    }
+
     let challenge = random_challenge_hex();
     let now = now_unix_s();
     let expires_at = now.saturating_add(AUTH_CHALLENGE_TTL_S);
@@ -642,6 +681,15 @@ async fn auth_verify(
     State(state): State<AppState>,
     Json(req): Json<VerifyChallengeRequest>,
 ) -> impl IntoResponse {
+    if !consume_auth_rate_token(&state, &format!("verify:{}", req.wallet)) {
+        return api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "AUTH_RATE_LIMITED",
+            "too many auth requests, try again shortly",
+        )
+        .into_response();
+    }
+
     let expected = {
         let map = state.auth_challenges.lock().expect("challenge lock");
         map.get(&req.wallet).cloned()
@@ -772,6 +820,15 @@ async fn auth_verify_wallet(
     State(state): State<AppState>,
     Json(req): Json<VerifyWalletChallengeRequest>,
 ) -> impl IntoResponse {
+    if !consume_auth_rate_token(&state, &format!("verify-wallet:{}", req.wallet)) {
+        return api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "AUTH_RATE_LIMITED",
+            "too many auth requests, try again shortly",
+        )
+        .into_response();
+    }
+
     let expected = {
         let map = state.auth_challenges.lock().expect("challenge lock");
         map.get(&req.wallet).cloned()

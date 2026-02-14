@@ -38,7 +38,8 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 
 ### JT-031 (P1) — Rate limit scaffold for auth endpoints
 - Add in-memory token-bucket style limiter for challenge/verify
-- Status: ⏳ planned
+- Return `429 AUTH_RATE_LIMITED` on limit exceed
+- Status: ✅ implemented
 
 ### JT-032 (P1) — CI quality gate expansion
 - Add clippy/fmt checks (when toolchain components available)

@@ -58,6 +58,7 @@ Security baseline:
 - `Referrer-Policy: no-referrer`
 - `Cross-Origin-Opener-Policy: same-origin`
 - `Cross-Origin-Resource-Policy: same-origin`
+- Auth endpoint rate-limit scaffold (in-memory token bucket; 429 on exceed)
 
 ## Modules
 

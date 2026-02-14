@@ -122,6 +122,41 @@ async fn dev_bootstrap_demo_endpoint_works() {
 }
 
 #[tokio::test]
+async fn auth_challenge_rate_limit_is_enforced() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    for _ in 0..6 {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/challenge")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"wallet":"wallet-rate"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    let blocked = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"wallet-rate"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), 429);
+}
+
+#[tokio::test]
 async fn auth_logout_clears_wallet_challenge() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);
