@@ -189,6 +189,37 @@ async fn pop_verify_endpoint_accepts_valid_request() {
 }
 
 #[tokio::test]
+async fn list_endpoints_return_data() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let convs = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/conversations")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(convs.status(), 200);
+
+    let messages = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/messages?conv_id=%5B9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9%5D")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(messages.status(), 200);
+}
+
+#[tokio::test]
 async fn conversations_send_and_read_endpoints_happy_path() {
     let mut state = ServiceState::default();
     let a1 = [1u8; 32];

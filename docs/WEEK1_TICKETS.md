@@ -65,6 +65,11 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Add UI button to trigger one-click bootstrap and auto-fill key fields
 - Status: ✅ implemented
 
+### JT-012 (P0) — Conversation/message query + UI state rendering
+- Add `GET /v1/conversations` and `GET /v1/messages?conv_id=...`
+- Add UI controls to fetch and render these lists
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.

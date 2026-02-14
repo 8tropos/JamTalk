@@ -7,7 +7,7 @@ description = "JamTalk: on-chain messenger service skeleton for JAM"
 
 [features]
 default = []
-pop-http = ["dep:reqwest", "dep:serde_json"]
+pop-http = ["dep:reqwest"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -22,7 +22,7 @@ sha2 = "0.10"
 x25519-dalek = "2"
 rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
-serde_json = { version = "1", optional = true }
+serde_json = "1"
 axum = { version = "0.7", features = ["json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 

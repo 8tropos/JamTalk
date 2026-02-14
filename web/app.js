@@ -72,6 +72,17 @@ q('btn-status').onclick = async () => {
   q('out-status').textContent = JSON.stringify(await callJson('/v1/status'), null, 2);
 };
 
+q('btn-list-convs').onclick = async () => {
+  q('out-list').textContent = '...';
+  q('out-list').textContent = JSON.stringify(await callJson('/v1/conversations'), null, 2);
+};
+
+q('btn-list-messages').onclick = async () => {
+  q('out-list').textContent = '...';
+  const conv = encodeURIComponent(q('conv-id').value.trim());
+  q('out-list').textContent = JSON.stringify(await callJson(`/v1/messages?conv_id=${conv}`), null, 2);
+};
+
 q('btn-challenge').onclick = async () => {
   q('out-challenge').textContent = '...';
   const wallet = q('wallet').value.trim();

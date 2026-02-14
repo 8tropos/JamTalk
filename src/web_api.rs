@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -152,6 +152,40 @@ struct ReadAckResponse {
     ok: bool,
     conv_id: [u8; 32],
     seq: u64,
+}
+
+#[derive(Serialize)]
+struct ConversationListItem {
+    conv_id: [u8; 32],
+    conv_type: String,
+    participants_count: u32,
+    active: bool,
+}
+
+#[derive(Serialize)]
+struct ConversationListResponse {
+    ok: bool,
+    items: Vec<ConversationListItem>,
+}
+
+#[derive(Deserialize)]
+struct MessagesQuery {
+    conv_id: String,
+}
+
+#[derive(Serialize)]
+struct MessageListItem {
+    seq: u64,
+    sender: [u8; 32],
+    cipher_len: u32,
+    flags: u16,
+}
+
+#[derive(Serialize)]
+struct MessageListResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    items: Vec<MessageListItem>,
 }
 
 #[derive(Deserialize)]
@@ -360,6 +394,10 @@ async fn auth_verify(
 
 fn dev_signing_key(seed: u8) -> SigningKey {
     SigningKey::from_bytes(&[seed; 32])
+}
+
+fn parse_u8_32_json(s: &str) -> Result<[u8; 32], ServiceError> {
+    serde_json::from_str::<[u8; 32]>(s).map_err(|_| ServiceError::Bounds("invalid [u8;32] query"))
 }
 
 fn parse_conv_type(s: &str) -> Result<ConversationType, ServiceError> {
@@ -693,6 +731,62 @@ async fn pop_verify(
         .into_response()
 }
 
+async fn list_conversations(State(state): State<AppState>) -> impl IntoResponse {
+    let s = state.service.lock().expect("state lock");
+    let items = s
+        .conversation_by_id
+        .iter()
+        .map(|(id, c)| ConversationListItem {
+            conv_id: *id,
+            conv_type: match c.conv_type {
+                ConversationType::DM => "dm".to_string(),
+                ConversationType::Group => "group".to_string(),
+            },
+            participants_count: c.participants_count,
+            active: c.active,
+        })
+        .collect::<Vec<_>>();
+
+    (StatusCode::OK, Json(ConversationListResponse { ok: true, items })).into_response()
+}
+
+async fn list_messages(
+    State(state): State<AppState>,
+    Query(q): Query<MessagesQuery>,
+) -> impl IntoResponse {
+    let conv_id = match parse_u8_32_json(&q.conv_id) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let s = state.service.lock().expect("state lock");
+    let mut items = s
+        .message_meta_by_conv_seq
+        .iter()
+        .filter(|((cid, _), _)| *cid == conv_id)
+        .map(|((_cid, seq), m)| MessageListItem {
+            seq: *seq,
+            sender: m.sender,
+            cipher_len: m.cipher_len,
+            flags: m.flags,
+        })
+        .collect::<Vec<_>>();
+    items.sort_by_key(|i| i.seq);
+
+    (
+        StatusCode::OK,
+        Json(MessageListResponse {
+            ok: true,
+            conv_id,
+            items,
+        }),
+    )
+        .into_response()
+}
+
 async fn create_conversation(
     State(state): State<AppState>,
     Json(req): Json<CreateConversationRequest>,
@@ -841,6 +935,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/pop/verify", post(pop_verify))
+        .route("/v1/conversations", get(list_conversations).post(create_conversation))
+        .route("/v1/messages", get(list_messages))
         .route("/v1/dev/register-device", post(dev_register_device))
         .route("/v1/dev/sign/challenge", post(dev_sign_challenge))
         .route("/v1/dev/sign/conversation", post(dev_sign_conversation))
@@ -848,7 +944,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/dev/sign/read", post(dev_sign_read))
         .route("/v1/dev/sign/pop", post(dev_sign_pop))
         .route("/v1/dev/bootstrap-demo", post(dev_bootstrap_demo))
-        .route("/v1/conversations", post(create_conversation))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))
         .with_state(state)

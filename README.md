@@ -35,7 +35,9 @@ Current API endpoints:
 - `POST /v1/auth/challenge`
 - `POST /v1/auth/verify`
 - `POST /v1/pop/verify`
+- `GET /v1/conversations`
 - `POST /v1/conversations`
+- `GET /v1/messages?conv_id=<json-[u8;32]>`
 - `POST /v1/messages/send`
 - `POST /v1/messages/read`
 
