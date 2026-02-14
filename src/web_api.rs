@@ -186,11 +186,24 @@ struct LogoutRequest {
     wallet: String,
 }
 
+#[derive(Deserialize)]
+struct RefreshRequest {
+    wallet: String,
+    current_challenge: String,
+}
+
 #[derive(Serialize)]
 struct LogoutResponse {
     ok: bool,
     wallet: String,
     cleared_challenge: bool,
+}
+
+#[derive(Serialize)]
+struct RefreshResponse {
+    ok: bool,
+    wallet: String,
+    challenge: String,
 }
 
 #[derive(Serialize)]
@@ -783,6 +796,112 @@ async fn auth_logout(
             ok: true,
             wallet: req.wallet,
             cleared_challenge: cleared,
+        }),
+    )
+        .into_response()
+}
+
+async fn auth_refresh(
+    State(state): State<AppState>,
+    Json(req): Json<RefreshRequest>,
+) -> impl IntoResponse {
+    if req.wallet.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "AUTH_WALLET_REQUIRED", "wallet required")
+            .into_response();
+    }
+    if req.current_challenge.trim().is_empty() {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "AUTH_CHALLENGE_REQUIRED",
+            "current_challenge required",
+        )
+        .into_response();
+    }
+
+    if !consume_auth_rate_token(&state, &format!("refresh:{}", req.wallet)) {
+        return api_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "AUTH_RATE_LIMITED",
+            "too many auth requests, try again shortly",
+        )
+        .into_response();
+    }
+
+    let now = now_unix_s();
+    {
+        let consumed = state
+            .auth_consumed_challenges
+            .lock()
+            .expect("consumed lock");
+        if consumed.contains(&req.current_challenge) {
+            return api_error(
+                StatusCode::UNAUTHORIZED,
+                "AUTH_CHALLENGE_REPLAY",
+                "challenge replay detected",
+            )
+            .into_response();
+        }
+    }
+
+    let current = {
+        let map = state.auth_challenges.lock().expect("challenge lock");
+        map.get(&req.wallet).cloned()
+    };
+
+    let Some(entry) = current else {
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_MISSING",
+            "no challenge for wallet",
+        )
+        .into_response();
+    };
+
+    if entry.expires_at_unix_s <= now {
+        let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+        metrics.expired += 1;
+        metrics.failed += 1;
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_EXPIRED",
+            "challenge expired",
+        )
+        .into_response();
+    }
+
+    if entry.challenge != req.current_challenge {
+        let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+        metrics.failed += 1;
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_MISMATCH",
+            "challenge mismatch",
+        )
+        .into_response();
+    }
+
+    let new_challenge = random_challenge_hex();
+    let expires_at = now.saturating_add(AUTH_CHALLENGE_TTL_S);
+    {
+        let mut map = state.auth_challenges.lock().expect("challenge lock");
+        map.insert(
+            req.wallet.clone(),
+            AuthChallengeEntry {
+                challenge: new_challenge.clone(),
+                expires_at_unix_s: expires_at,
+            },
+        );
+    }
+
+    let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+    metrics.issued += 1;
+
+    (
+        StatusCode::OK,
+        Json(RefreshResponse {
+            ok: true,
+            wallet: req.wallet,
+            challenge: new_challenge,
         }),
     )
         .into_response()
@@ -2506,6 +2625,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/status", get(status))
         .route("/v1/config", get(runtime_config))
         .route("/v1/auth/challenge", post(auth_challenge))
+        .route("/v1/auth/refresh", post(auth_refresh))
         .route("/v1/auth/logout", post(auth_logout))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/auth/verify-wallet", post(auth_verify_wallet))

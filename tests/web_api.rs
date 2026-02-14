@@ -250,6 +250,51 @@ async fn auth_challenge_rate_limit_is_enforced() {
 }
 
 #[tokio::test]
+async fn auth_refresh_rotates_challenge() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let challenge_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"wallet-refresh"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(challenge_resp.status(), 200);
+    let body = axum::body::to_bytes(challenge_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let old_challenge = v["challenge"].as_str().unwrap().to_string();
+
+    let refresh_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "wallet": "wallet-refresh",
+                        "current_challenge": old_challenge,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(refresh_resp.status(), 200);
+}
+
+#[tokio::test]
 async fn auth_logout_clears_wallet_challenge() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

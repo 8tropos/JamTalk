@@ -13,7 +13,7 @@ Operational hardening for multi-environment rollout and resilient wallet session
 ### JT-037 (P0) — Wallet session refresh endpoint
 - Add `POST /v1/auth/refresh` to rotate/extend active challenge lifecycle safely
 - Preserve one-time challenge protections
-- Status: ⏳ planned
+- Status: ✅ implemented
 
 ### JT-038 (P1) — Ops runbook + deployment configuration docs
 - Add environment/deployment and incident handling runbook in `docs/`

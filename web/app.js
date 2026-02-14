@@ -162,6 +162,23 @@ q('btn-clear-session').onclick = () => {
   renderSession();
 };
 
+q('btn-refresh-auth').onclick = async () => withPending('btn-refresh-auth', async () => {
+  const wallet = q('wallet').value.trim();
+  const current_challenge = q('challenge').value.trim();
+  const res = await callJson('/v1/auth/refresh', 'POST', { wallet, current_challenge });
+  q('out-session').textContent = JSON.stringify(res, null, 2);
+  if (res.ok && res.body?.challenge) {
+    q('challenge').value = res.body.challenge;
+    const s = readSession();
+    s.challenge = res.body.challenge;
+    writeSession(s);
+    renderSession();
+    toast('Auth challenge refreshed');
+  } else {
+    toast(apiErrorText(res, 'Auth refresh failed'), true);
+  }
+});
+
 q('btn-logout').onclick = async () => withPending('btn-logout', async () => {
   const wallet = q('wallet').value.trim();
   const res = await callJson('/v1/auth/logout', 'POST', { wallet });
