@@ -414,6 +414,13 @@ q('btn-remove-member').onclick = async () => withPending('btn-remove-member', as
   }
 });
 
+q('btn-list-members').onclick = async () => {
+  const conv = encodeURIComponent(q('conv-id').value.trim());
+  const res = await callJson(`/v1/conversations/members?conv_id=${conv}`);
+  q('out-members-list').textContent = JSON.stringify(res, null, 2);
+  if (!res.ok) toast(apiErrorText(res, 'List members failed'), true);
+};
+
 q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => {
   q('out-send').textContent = '...';
   const payload = {

@@ -717,6 +717,19 @@ async fn conversation_member_add_remove_endpoints_happy_path() {
         .unwrap();
     assert_eq!(conv_resp.status(), 200);
 
+    let members_before = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/conversations/members?conv_id=%5B7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7%5D")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(members_before.status(), 200);
+
     let mut awi = AddMemberWI {
         conv_id,
         actor: a1,

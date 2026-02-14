@@ -262,6 +262,26 @@ struct ConversationListResponse {
 }
 
 #[derive(Deserialize)]
+struct MembersQuery {
+    conv_id: String,
+}
+
+#[derive(Serialize)]
+struct ConversationMemberItem {
+    account: [u8; 32],
+    role: u8,
+    active: bool,
+    joined_slot: u64,
+}
+
+#[derive(Serialize)]
+struct ConversationMembersResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    items: Vec<ConversationMemberItem>,
+}
+
+#[derive(Deserialize)]
 struct MessagesQuery {
     conv_id: String,
 }
@@ -1316,6 +1336,53 @@ async fn list_conversations(State(state): State<AppState>) -> impl IntoResponse 
     (StatusCode::OK, Json(ConversationListResponse { ok: true, items })).into_response()
 }
 
+async fn list_members(
+    State(state): State<AppState>,
+    Query(q): Query<MembersQuery>,
+) -> impl IntoResponse {
+    let conv_id = match parse_u8_32_json(&q.conv_id) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let s = state.service.lock().expect("state lock");
+    if !s.conversation_by_id.contains_key(&conv_id) {
+        return api_error(
+            StatusCode::NOT_FOUND,
+            "CONV_NOT_FOUND",
+            "conversation not found",
+        )
+        .into_response();
+    }
+
+    let mut items = s
+        .member_by_conv_account
+        .iter()
+        .filter(|((cid, _), _)| *cid == conv_id)
+        .map(|((_cid, account), m)| ConversationMemberItem {
+            account: *account,
+            role: m.role,
+            active: m.active,
+            joined_slot: m.joined_slot,
+        })
+        .collect::<Vec<_>>();
+
+    items.sort_by_key(|m| (u8::MAX - m.role, m.joined_slot, m.account));
+
+    (
+        StatusCode::OK,
+        Json(ConversationMembersResponse {
+            ok: true,
+            conv_id,
+            items,
+        }),
+    )
+        .into_response()
+}
+
 async fn list_messages(
     State(state): State<AppState>,
     Query(q): Query<MessagesQuery>,
@@ -1625,6 +1692,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/pop/verify", post(pop_verify))
         .route("/v1/blobs/register", post(register_blob))
         .route("/v1/conversations", get(list_conversations).post(create_conversation))
+        .route("/v1/conversations/members", get(list_members))
         .route("/v1/messages", get(list_messages))
         .route("/v1/messages/detail", get(message_detail))
         .route("/v1/dev/register-device", post(dev_register_device))

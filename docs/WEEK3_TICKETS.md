@@ -19,7 +19,7 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 ### JT-027 (P0) — Conversation participant listing endpoint
 - Add `GET /v1/conversations/members?conv_id=...`
 - Render member roster in browser UI
-- Status: ⏳ planned
+- Status: ✅ implemented
 
 ### JT-028 (P1) — Role management endpoint (promote/demote admin)
 - Add admin role mutation endpoints with signature checks
