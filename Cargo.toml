@@ -23,6 +23,8 @@ x25519-dalek = "2"
 rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 serde_json = { version = "1", optional = true }
+axum = { version = "0.7", features = ["json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 
 [dev-dependencies]
 pretty_assertions = "1"

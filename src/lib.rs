@@ -10,6 +10,7 @@ pub mod refine;
 pub mod runtime;
 pub mod state;
 pub mod types;
+pub mod web_api;
 
 pub use accumulate::{
     apply_work_result, bond_for_message, fee_for_message, release_bond_if_due,

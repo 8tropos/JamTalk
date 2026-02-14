@@ -24,7 +24,12 @@ This repository is a rigorous, implementation-oriented scaffold for an **on-chai
 
 ```bash
 cargo test
+cargo run --bin jamtalk-api
 ```
+
+Then open:
+- `http://127.0.0.1:8080/health`
+- `http://127.0.0.1:8080/v1/status`
 
 ## Modules
 
