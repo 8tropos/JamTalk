@@ -21,22 +21,22 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Acceptance: `docs/WEEK1_TICKETS.md` committed
 - Status: ✅ implemented
 
-### JT-004 (P0) — Wallet challenge auth endpoint (next)
+### JT-004 (P0) — Wallet challenge auth endpoint
 - Add `/v1/auth/challenge` and `/v1/auth/verify`
 - Start with deterministic challenge store in memory
 - Acceptance: tests for challenge issue/verify lifecycle
-- Status: ⏳ next
+- Status: ✅ implemented
 
-### JT-005 (P0) — PoP verify API wrapper endpoint (next)
+### JT-005 (P0) — PoP verify API wrapper endpoint
 - Add `/v1/pop/verify`
 - Bridge to existing PoP verification pipeline
 - Acceptance: endpoint returns verified/denied with deterministic error mapping
-- Status: ⏳ next
+- Status: ✅ implemented
 
-### JT-006 (P0) — Conversation and messaging API skeleton (next)
+### JT-006 (P0) — Conversation and messaging API skeleton
 - Add `/v1/conversations`, `/v1/messages/send`, `/v1/messages/read`
 - Acceptance: happy-path state transitions with integration tests
-- Status: ⏳ next
+- Status: ✅ implemented
 
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.

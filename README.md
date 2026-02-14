@@ -31,6 +31,14 @@ Then open:
 - `http://127.0.0.1:8080/health`
 - `http://127.0.0.1:8080/v1/status`
 
+Current API endpoints:
+- `POST /v1/auth/challenge`
+- `POST /v1/auth/verify`
+- `POST /v1/pop/verify`
+- `POST /v1/conversations`
+- `POST /v1/messages/send`
+- `POST /v1/messages/read`
+
 ## Modules
 
 - `types.rs` — protocol constants, WI/result/event structs

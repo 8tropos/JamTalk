@@ -13,7 +13,10 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::ServiceError;
-use crate::{apply_work_result, refine_work_item, ServiceState, VerifyPersonhoodWI, WorkItem};
+use crate::{
+    apply_work_result, refine_work_item, AckReadWI, ConversationType, CreateConversationWI,
+    Event, SendMessageWI, ServiceState, VerifyPersonhoodWI, WorkItem,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -87,6 +90,62 @@ struct VerifyPoPResponse {
     account: [u8; 32],
     provider: String,
     verified_until_slot: u64,
+}
+
+#[derive(Deserialize)]
+struct CreateConversationRequest {
+    conv_id: [u8; 32],
+    conv_type: String,
+    creator: [u8; 32],
+    initial_participants: Vec<[u8; 32]>,
+    signature_ed25519: Vec<u8>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct CreateConversationResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+}
+
+#[derive(Deserialize)]
+struct SendMessageRequest {
+    conv_id: [u8; 32],
+    sender: [u8; 32],
+    sender_nonce: u64,
+    cipher_root: [u8; 32],
+    cipher_len: u32,
+    chunk_count: u32,
+    envelope_root: [u8; 32],
+    recipients_hint_count: u16,
+    fee_limit: u128,
+    bond_limit: u128,
+    signature_ed25519: Vec<u8>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct SendMessageResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    seq: u64,
+    msg_id: [u8; 32],
+}
+
+#[derive(Deserialize)]
+struct ReadAckRequest {
+    conv_id: [u8; 32],
+    reader: [u8; 32],
+    seq: u64,
+    signature_ed25519: Vec<u8>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct ReadAckResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    seq: u64,
 }
 
 async fn health() -> impl IntoResponse {
@@ -185,6 +244,14 @@ async fn auth_verify(
         .into_response()
 }
 
+fn parse_conv_type(s: &str) -> Result<ConversationType, ServiceError> {
+    match s.to_ascii_lowercase().as_str() {
+        "dm" => Ok(ConversationType::DM),
+        "group" => Ok(ConversationType::Group),
+        _ => Err(ServiceError::Bounds("invalid conv_type")),
+    }
+}
+
 fn error_to_http(err: ServiceError) -> (StatusCode, String) {
     let code = err.code();
     let status = match code {
@@ -236,6 +303,143 @@ async fn pop_verify(
         .into_response()
 }
 
+async fn create_conversation(
+    State(state): State<AppState>,
+    Json(req): Json<CreateConversationRequest>,
+) -> impl IntoResponse {
+    let conv_type = match parse_conv_type(&req.conv_type) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let wi = CreateConversationWI {
+        conv_id: req.conv_id,
+        conv_type,
+        creator: req.creator,
+        initial_participants: req.initial_participants,
+        signature_ed25519: req.signature_ed25519,
+    };
+
+    let wr = match refine_work_item(WorkItem::CreateConversation(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    if let Err(e) = apply_work_result(&mut s, wr, slot) {
+        let (status, msg) = error_to_http(e);
+        return (status, msg).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(CreateConversationResponse {
+            ok: true,
+            conv_id: req.conv_id,
+        }),
+    )
+        .into_response()
+}
+
+async fn send_message(
+    State(state): State<AppState>,
+    Json(req): Json<SendMessageRequest>,
+) -> impl IntoResponse {
+    let wi = SendMessageWI {
+        conv_id: req.conv_id,
+        sender: req.sender,
+        sender_nonce: req.sender_nonce,
+        cipher_root: req.cipher_root,
+        cipher_len: req.cipher_len,
+        chunk_count: req.chunk_count,
+        envelope_root: req.envelope_root,
+        recipients_hint_count: req.recipients_hint_count,
+        fee_limit: req.fee_limit,
+        bond_limit: req.bond_limit,
+        signature_ed25519: req.signature_ed25519,
+    };
+
+    let wr = match refine_work_item(WorkItem::SendMessage(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    let ev = match apply_work_result(&mut s, wr, slot) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    match ev {
+        Event::MessageCommitted {
+            conv_id,
+            seq,
+            msg_id,
+        } => (
+            StatusCode::OK,
+            Json(SendMessageResponse {
+                ok: true,
+                conv_id,
+                seq,
+                msg_id,
+            }),
+        )
+            .into_response(),
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, "unexpected event").into_response(),
+    }
+}
+
+async fn read_ack(
+    State(state): State<AppState>,
+    Json(req): Json<ReadAckRequest>,
+) -> impl IntoResponse {
+    let wi = AckReadWI {
+        conv_id: req.conv_id,
+        reader: req.reader,
+        seq: req.seq,
+        signature_ed25519: req.signature_ed25519,
+    };
+
+    let wr = match refine_work_item(WorkItem::AckRead(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    if let Err(e) = apply_work_result(&mut s, wr, slot) {
+        let (status, msg) = error_to_http(e);
+        return (status, msg).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(ReadAckResponse {
+            ok: true,
+            conv_id: req.conv_id,
+            seq: req.seq,
+        }),
+    )
+        .into_response()
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -243,6 +447,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/pop/verify", post(pop_verify))
+        .route("/v1/conversations", post(create_conversation))
+        .route("/v1/messages/send", post(send_message))
+        .route("/v1/messages/read", post(read_ack))
         .with_state(state)
 }
 
