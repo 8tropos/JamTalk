@@ -189,6 +189,62 @@ async fn pop_verify_endpoint_accepts_valid_request() {
 }
 
 #[tokio::test]
+async fn blob_register_endpoint_accepts_text_payload() {
+    let mut state = ServiceState::default();
+    let account = [1u8; 32];
+    let sk = SigningKey::from_bytes(&[1u8; 32]);
+
+    let mut reg = RegisterDeviceWI {
+        account,
+        device: DeviceRecord {
+            device_id: [1u8; 16],
+            enc_pubkey_x25519: [2u8; 32],
+            sig_pubkey_ed25519: sk.verifying_key().to_bytes(),
+            added_slot: 0,
+        },
+        signature_ed25519: vec![],
+    };
+    reg.signature_ed25519 = sk.sign(&signing_bytes_register_device(&reg)).to_bytes().to_vec();
+    let rr = refine_work_item(WorkItem::RegisterDevice(reg)).unwrap();
+    apply_work_result(&mut state, rr, 1).unwrap();
+
+    let chunks = vec![b"hello".to_vec()];
+    let mut bwi = jam_messenger::RegisterBlobWI {
+        root: crypto::merkle_root(&chunks),
+        total_len: 5,
+        chunk_count: 1,
+        chunks,
+        sender: account,
+        signature_ed25519: vec![],
+    };
+    bwi.signature_ed25519 = sk
+        .sign(&jam_messenger::auth::signing_bytes_register_blob(&bwi))
+        .to_bytes()
+        .to_vec();
+
+    let app = web_api::build_router(web_api::AppState::new(state));
+    let payload = serde_json::json!({
+        "sender": account,
+        "text": "hello",
+        "signature_ed25519": bwi.signature_ed25519,
+        "current_slot": 2
+    });
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/blobs/register")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
 async fn list_endpoints_return_data() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

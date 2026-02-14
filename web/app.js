@@ -220,6 +220,32 @@ q('btn-dev-sign-pop').onclick = async () => {
   if (res.ok) q('pop-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
+q('btn-dev-sign-blob').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/blob', 'POST', {
+    seed: devSeed(),
+    sender: JSON.parse(q('msg-sender').value),
+    text: q('blob-text').value,
+  });
+  q('out-blob').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('blob-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-blob-register').onclick = async () => {
+  const payload = {
+    sender: JSON.parse(q('msg-sender').value),
+    text: q('blob-text').value,
+    signature_ed25519: JSON.parse(q('blob-sig').value),
+    current_slot: 19,
+  };
+  const res = await callJson('/v1/blobs/register', 'POST', payload);
+  q('out-blob').textContent = JSON.stringify(res, null, 2);
+  if (res.ok && res.body) {
+    q('msg-cipher-root').value = JSON.stringify(res.body.root);
+    q('msg-cipher-len').value = String(res.body.total_len);
+    q('msg-chunk-count').value = String(res.body.chunk_count);
+  }
+};
+
 q('btn-dev-sign-conv').onclick = async () => {
   const res = await callJson('/v1/dev/sign/conversation', 'POST', {
     seed: devSeed(),

@@ -21,7 +21,7 @@ use crate::errors::ServiceError;
 use crate::{
     apply_work_result, refine_work_item, AckReadWI, ConversationType, CreateConversationWI,
     DeviceRecord, Event, RegisterBlobWI, RegisterDeviceWI, SendMessageWI, ServiceState,
-    VerifyPersonhoodWI, WorkItem,
+    VerifyPersonhoodWI, WorkItem, CHUNK_BYTES,
 };
 
 #[derive(Clone)]
@@ -256,6 +256,29 @@ struct DevSignPoPVerifyRequest {
     proof_blob: Vec<u8>,
     nullifier: [u8; 32],
     expires_at_slot: u64,
+}
+
+#[derive(Deserialize)]
+struct BlobRegisterRequest {
+    sender: [u8; 32],
+    text: String,
+    signature_ed25519: Vec<u8>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct BlobRegisterResponse {
+    ok: bool,
+    root: [u8; 32],
+    total_len: u32,
+    chunk_count: u32,
+}
+
+#[derive(Deserialize)]
+struct DevSignBlobRequest {
+    seed: u8,
+    sender: [u8; 32],
+    text: String,
 }
 
 #[derive(Serialize)]
@@ -544,6 +567,80 @@ async fn dev_sign_pop(Json(req): Json<DevSignPoPVerifyRequest>) -> impl IntoResp
     };
     let sig = sk
         .sign(&signing_bytes_verify_personhood(&wi))
+        .to_bytes()
+        .to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+fn text_to_chunks(text: &str) -> Vec<Vec<u8>> {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() {
+        return vec![Vec::new()];
+    }
+    bytes
+        .chunks(CHUNK_BYTES)
+        .map(|c| c.to_vec())
+        .collect::<Vec<_>>()
+}
+
+async fn register_blob(
+    State(state): State<AppState>,
+    Json(req): Json<BlobRegisterRequest>,
+) -> impl IntoResponse {
+    let chunks = text_to_chunks(&req.text);
+    let root = crate::crypto::merkle_root(&chunks);
+    let total_len = req.text.len() as u32;
+    let chunk_count = chunks.len() as u32;
+
+    let wi = RegisterBlobWI {
+        root,
+        total_len,
+        chunk_count,
+        chunks,
+        sender: req.sender,
+        signature_ed25519: req.signature_ed25519,
+    };
+
+    let wr = match refine_work_item(WorkItem::RegisterBlob(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    if let Err(e) = apply_work_result(&mut s, wr, slot) {
+        let (status, msg) = error_to_http(e);
+        return (status, msg).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(BlobRegisterResponse {
+            ok: true,
+            root,
+            total_len,
+            chunk_count,
+        }),
+    )
+        .into_response()
+}
+
+async fn dev_sign_blob(Json(req): Json<DevSignBlobRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let chunks = text_to_chunks(&req.text);
+    let wi = RegisterBlobWI {
+        root: crate::crypto::merkle_root(&chunks),
+        total_len: req.text.len() as u32,
+        chunk_count: chunks.len() as u32,
+        chunks,
+        sender: req.sender,
+        signature_ed25519: vec![],
+    };
+    let sig = sk
+        .sign(&signing_bytes_register_blob(&wi))
         .to_bytes()
         .to_vec();
     (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
@@ -935,6 +1032,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/pop/verify", post(pop_verify))
+        .route("/v1/blobs/register", post(register_blob))
         .route("/v1/conversations", get(list_conversations).post(create_conversation))
         .route("/v1/messages", get(list_messages))
         .route("/v1/dev/register-device", post(dev_register_device))
@@ -943,6 +1041,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/dev/sign/send", post(dev_sign_send))
         .route("/v1/dev/sign/read", post(dev_sign_read))
         .route("/v1/dev/sign/pop", post(dev_sign_pop))
+        .route("/v1/dev/sign/blob", post(dev_sign_blob))
         .route("/v1/dev/bootstrap-demo", post(dev_bootstrap_demo))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))

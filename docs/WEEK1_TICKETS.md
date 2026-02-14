@@ -76,6 +76,12 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Pause refresh when tab hidden and auto-resume when visible
 - Status: ✅ implemented
 
+### JT-014 (P0) — Blob registration from browser text
+- Add blob register endpoint for text payload to chunk/root pipeline
+- Add dev sign helper for blob signatures
+- Add UI section to register blob and auto-fill send fields
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.

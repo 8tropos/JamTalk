@@ -87,6 +87,19 @@
       </section>
 
       <section class="card">
+        <h2>Blob register (JT-014)</h2>
+        <p class="muted">Register plaintext as blob chunks, then use returned root/len in send flow.</p>
+        <textarea id="blob-text" rows="3">hello</textarea>
+        <div class="row">
+          <button id="btn-dev-sign-blob">Dev sign blob</button>
+          <button id="btn-blob-register">Register blob</button>
+        </div>
+        <label>blob signature bytes JSON</label>
+        <textarea id="blob-sig" rows="2">[]</textarea>
+        <pre id="out-blob"></pre>
+      </section>
+
+      <section class="card">
         <h2>Conversation + Send + Read (JT-009 UI flow)</h2>
         <p class="muted">Browser form flow for `/v1/conversations`, `/v1/messages/send`, `/v1/messages/read`</p>
 
