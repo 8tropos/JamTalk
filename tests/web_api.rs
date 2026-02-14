@@ -168,6 +168,7 @@ async fn ui_shell_routes_are_served() {
     assert_eq!(js.status(), 200);
 
     let css = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/styles.css")
@@ -177,6 +178,29 @@ async fn ui_shell_routes_are_served() {
         .await
         .unwrap();
     assert_eq!(css.status(), 200);
+
+    let privacy = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/privacy")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(privacy.status(), 200);
+
+    let terms = app
+        .oneshot(
+            Request::builder()
+                .uri("/terms")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(terms.status(), 200);
 }
 
 #[tokio::test]

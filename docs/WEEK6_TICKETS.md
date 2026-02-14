@@ -13,7 +13,7 @@ Public-beta readiness: onboarding/disclosures and lightweight product analytics.
 ### JT-040 (P1) — Privacy/terms disclosure pages
 - Add `/privacy` and `/terms` static disclosure routes
 - Link from landing + app shell
-- Status: ⏳ planned
+- Status: ✅ implemented
 
 ### JT-041 (P1) — Funnel analytics counters endpoint
 - Add in-memory counters for auth/session, conversation, and messaging funnel events

@@ -594,6 +594,8 @@ const UI_HTML: &str = include_str!("../web/index.html");
 const UI_CSS: &str = include_str!("../web/styles.css");
 const UI_JS: &str = include_str!("../web/app.js");
 const LANDING_HTML: &str = include_str!("../web/landing.html");
+const PRIVACY_HTML: &str = include_str!("../web/privacy.html");
+const TERMS_HTML: &str = include_str!("../web/terms.html");
 
 async fn health(State(state): State<AppState>) -> impl IntoResponse {
     Json(HealthResponse {
@@ -610,6 +612,14 @@ async fn landing_page() -> impl IntoResponse {
 
 async fn ui_index() -> impl IntoResponse {
     Html(UI_HTML)
+}
+
+async fn privacy_page() -> impl IntoResponse {
+    Html(PRIVACY_HTML)
+}
+
+async fn terms_page() -> impl IntoResponse {
+    Html(TERMS_HTML)
 }
 
 async fn ui_css() -> impl IntoResponse {
@@ -2628,6 +2638,8 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(landing_page))
         .route("/app", get(ui_index))
+        .route("/privacy", get(privacy_page))
+        .route("/terms", get(terms_page))
         .route("/app.js", get(ui_js))
         .route("/styles.css", get(ui_css))
         .route("/health", get(health))

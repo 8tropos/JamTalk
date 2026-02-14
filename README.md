@@ -30,6 +30,8 @@ cargo run --bin jamtalk-api
 Then open:
 - `http://127.0.0.1:8080/` (landing page)
 - `http://127.0.0.1:8080/app` (app shell)
+- `http://127.0.0.1:8080/privacy`
+- `http://127.0.0.1:8080/terms`
 - `http://127.0.0.1:8080/health`
 - `http://127.0.0.1:8080/v1/status`
 
