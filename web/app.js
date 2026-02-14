@@ -77,17 +77,49 @@ q('btn-list-convs').onclick = async () => {
   q('out-list').textContent = JSON.stringify(await callJson('/v1/conversations'), null, 2);
 };
 
+function shortAccount(a){
+  if(!Array.isArray(a)) return 'unknown';
+  return `${a.slice(0,4).join(',')}...`;
+}
+
+function renderTimeline(msgRes){
+  const box = q('timeline');
+  if (!box) return;
+  const items = msgRes?.body?.items || [];
+  if (!items.length) {
+    box.innerHTML = '<div class="msg-meta">No messages yet.</div>';
+    return;
+  }
+  box.innerHTML = items.map(m => `
+    <div class="msg-card">
+      <div><strong>seq #${m.seq}</strong></div>
+      <div class="msg-meta">sender: ${shortAccount(m.sender)}</div>
+      <div class="msg-meta">cipher_len: ${m.cipher_len} | flags: ${m.flags}</div>
+    </div>
+  `).join('');
+  if (q('timeline-autoscroll')?.checked) {
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
 async function refreshLists() {
   const convRes = await callJson('/v1/conversations');
   const conv = encodeURIComponent(q('conv-id').value.trim());
   const msgRes = await callJson(`/v1/messages?conv_id=${conv}`);
   q('out-list').textContent = JSON.stringify({ conversations: convRes, messages: msgRes }, null, 2);
+  renderTimeline(msgRes);
 }
 
 q('btn-list-messages').onclick = async () => {
   q('out-list').textContent = '...';
   const conv = encodeURIComponent(q('conv-id').value.trim());
-  q('out-list').textContent = JSON.stringify(await callJson(`/v1/messages?conv_id=${conv}`), null, 2);
+  const res = await callJson(`/v1/messages?conv_id=${conv}`);
+  q('out-list').textContent = JSON.stringify(res, null, 2);
+  renderTimeline(res);
+};
+
+q('btn-render-timeline').onclick = async () => {
+  await refreshLists();
 };
 
 q('btn-challenge').onclick = async () => {

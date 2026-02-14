@@ -82,6 +82,12 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Add UI section to register blob and auto-fill send fields
 - Status: ✅ implemented
 
+### JT-015 (P0) — In-browser chat timeline renderer
+- Add message timeline cards (seq/sender/flags/len)
+- Integrate with list/refresh flows
+- Add optional auto-scroll
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.
