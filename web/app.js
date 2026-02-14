@@ -61,6 +61,29 @@ function devSeed() {
   return Number(q('dev-seed').value || '1');
 }
 
+function setWalletCapability(kind, text) {
+  const box = q('wallet-capability');
+  if (!box) return;
+  box.classList.remove('ok', 'warn');
+  if (kind) box.classList.add(kind);
+  box.textContent = text;
+}
+
+function refreshWalletCapability() {
+  const hasEvm = !!window.ethereum;
+  const evmBtns = ['btn-connect-evm', 'btn-evm-sign-verify'];
+  evmBtns.forEach((id) => {
+    const el = q(id);
+    if (el) el.disabled = !hasEvm;
+  });
+
+  if (hasEvm) {
+    setWalletCapability('ok', 'Injected EVM wallet detected. You can connect and use personal_sign verification.');
+  } else {
+    setWalletCapability('warn', 'No injected EVM wallet detected. Install MetaMask/Rabby in this browser, or use manual/dev signing flow below.');
+  }
+}
+
 q('btn-connect').onclick = () => {
   const wallet = q('wallet').value.trim() || `wallet-${Date.now()}`;
   const s = readSession();
@@ -496,4 +519,22 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+if (window.ethereum?.on) {
+  window.ethereum.on('accountsChanged', (accounts) => {
+    const wallet = accounts?.[0] || '';
+    q('wallet').value = wallet;
+    const s = readSession();
+    s.wallet = wallet;
+    if (wallet) s.walletType = 'evm';
+    writeSession(s);
+    renderSession();
+    refreshWalletCapability();
+  });
+
+  window.ethereum.on('chainChanged', () => {
+    refreshWalletCapability();
+  });
+}
+
+refreshWalletCapability();
 renderSession();

@@ -18,7 +18,9 @@ Harden auth/session safety and move from dev-only UX toward production-safe brow
 
 ### JT-019 (P0) — Wallet capability detection + UX fallback states
 - Detect provider availability and surface clear fallback CTAs
-- Status: ⏳ planned
+- Disable EVM-specific actions when provider is absent
+- React to wallet account/network changes in-session
+- Status: ✅ implemented
 
 ### JT-020 (P0) — Structured API error objects for UI handling
 - Replace plain text errors with machine-readable API error envelope
