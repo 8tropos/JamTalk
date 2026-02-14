@@ -34,6 +34,10 @@ async function callJson(url, method = 'GET', body = null) {
   return { ok: res.ok, status: res.status, body: parsed };
 }
 
+function devSeed() {
+  return Number(q('dev-seed').value || '1');
+}
+
 q('btn-connect').onclick = () => {
   const wallet = q('wallet').value.trim() || `wallet-${Date.now()}`;
   const s = readSession();
@@ -158,6 +162,85 @@ q('btn-read-ack').onclick = async () => {
     current_slot: 22,
   };
   q('out-read').textContent = JSON.stringify(await callJson('/v1/messages/read', 'POST', payload), null, 2);
+};
+
+q('btn-dev-register-device').onclick = async () => {
+  const account = JSON.parse(q('conv-creator').value);
+  const res = await callJson('/v1/dev/register-device', 'POST', {
+    seed: devSeed(),
+    account,
+    current_slot: 1,
+  });
+  q('out-session').textContent = JSON.stringify(res, null, 2);
+  if (res.ok && res.body?.pubkey) {
+    q('pubkey').value = JSON.stringify(res.body.pubkey);
+  }
+};
+
+q('btn-dev-sign-challenge').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/challenge', 'POST', {
+    seed: devSeed(),
+    challenge: q('challenge').value.trim(),
+  });
+  q('out-verify').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    q('pubkey').value = JSON.stringify(res.body.sig_pubkey_ed25519);
+    q('sig').value = JSON.stringify(res.body.signature_ed25519);
+  }
+};
+
+q('btn-dev-sign-pop').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/pop', 'POST', {
+    seed: devSeed(),
+    account: JSON.parse(q('pop-account').value),
+    provider: q('pop-provider').value.trim(),
+    proof_blob: JSON.parse(q('pop-proof').value),
+    nullifier: JSON.parse(q('pop-nullifier').value),
+    expires_at_slot: Number(q('pop-expiry').value),
+  });
+  q('out-pop').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('pop-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-conv').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/conversation', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    conv_type: q('conv-type').value.trim(),
+    creator: JSON.parse(q('conv-creator').value),
+    initial_participants: JSON.parse(q('conv-participants').value),
+  });
+  q('out-conv').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('conv-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-send').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/send', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    sender: JSON.parse(q('msg-sender').value),
+    sender_nonce: Number(q('msg-nonce').value),
+    cipher_root: JSON.parse(q('msg-cipher-root').value),
+    cipher_len: Number(q('msg-cipher-len').value),
+    chunk_count: Number(q('msg-chunk-count').value),
+    envelope_root: JSON.parse(q('msg-envelope-root').value),
+    recipients_hint_count: Number(q('msg-recipients-hint').value),
+    fee_limit: Number(q('msg-fee-limit').value),
+    bond_limit: Number(q('msg-bond-limit').value),
+  });
+  q('out-send').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('msg-sig').value = JSON.stringify(res.body.signature_ed25519);
+};
+
+q('btn-dev-sign-read').onclick = async () => {
+  const res = await callJson('/v1/dev/sign/read', 'POST', {
+    seed: devSeed(),
+    conv_id: JSON.parse(q('conv-id').value),
+    reader: JSON.parse(q('read-reader').value),
+    seq: Number(q('read-seq').value),
+  });
+  q('out-read').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) q('read-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
 renderSession();

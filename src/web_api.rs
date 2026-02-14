@@ -10,12 +10,18 @@ use axum::{
     Json, Router,
 };
 use rand_core::{OsRng, RngCore};
+use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 
+use crate::auth::{
+    signing_bytes_ack_read, signing_bytes_create_conversation, signing_bytes_send_message,
+    signing_bytes_verify_personhood,
+};
 use crate::errors::ServiceError;
 use crate::{
     apply_work_result, refine_work_item, AckReadWI, ConversationType, CreateConversationWI,
-    Event, SendMessageWI, ServiceState, VerifyPersonhoodWI, WorkItem,
+    DeviceRecord, Event, RegisterDeviceWI, SendMessageWI, ServiceState, VerifyPersonhoodWI,
+    WorkItem,
 };
 
 #[derive(Clone)]
@@ -148,6 +154,82 @@ struct ReadAckResponse {
     seq: u64,
 }
 
+#[derive(Deserialize)]
+struct DevRegisterDeviceRequest {
+    seed: u8,
+    account: [u8; 32],
+    device_id: Option<[u8; 16]>,
+    current_slot: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct DevRegisterDeviceResponse {
+    ok: bool,
+    account: [u8; 32],
+    pubkey: [u8; 32],
+}
+
+#[derive(Deserialize)]
+struct DevSignChallengeRequest {
+    seed: u8,
+    challenge: String,
+}
+
+#[derive(Serialize)]
+struct DevSignChallengeResponse {
+    ok: bool,
+    sig_pubkey_ed25519: [u8; 32],
+    signature_ed25519: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct DevSignCreateConversationRequest {
+    seed: u8,
+    conv_id: [u8; 32],
+    conv_type: String,
+    creator: [u8; 32],
+    initial_participants: Vec<[u8; 32]>,
+}
+
+#[derive(Deserialize)]
+struct DevSignSendMessageRequest {
+    seed: u8,
+    conv_id: [u8; 32],
+    sender: [u8; 32],
+    sender_nonce: u64,
+    cipher_root: [u8; 32],
+    cipher_len: u32,
+    chunk_count: u32,
+    envelope_root: [u8; 32],
+    recipients_hint_count: u16,
+    fee_limit: u128,
+    bond_limit: u128,
+}
+
+#[derive(Deserialize)]
+struct DevSignReadAckRequest {
+    seed: u8,
+    conv_id: [u8; 32],
+    reader: [u8; 32],
+    seq: u64,
+}
+
+#[derive(Deserialize)]
+struct DevSignPoPVerifyRequest {
+    seed: u8,
+    account: [u8; 32],
+    provider: String,
+    proof_blob: Vec<u8>,
+    nullifier: [u8; 32],
+    expires_at_slot: u64,
+}
+
+#[derive(Serialize)]
+struct DevSignResponse {
+    ok: bool,
+    signature_ed25519: Vec<u8>,
+}
+
 const UI_HTML: &str = include_str!("../web/index.html");
 const UI_CSS: &str = include_str!("../web/styles.css");
 const UI_JS: &str = include_str!("../web/app.js");
@@ -263,6 +345,10 @@ async fn auth_verify(
         .into_response()
 }
 
+fn dev_signing_key(seed: u8) -> SigningKey {
+    SigningKey::from_bytes(&[seed; 32])
+}
+
 fn parse_conv_type(s: &str) -> Result<ConversationType, ServiceError> {
     match s.to_ascii_lowercase().as_str() {
         "dm" => Ok(ConversationType::DM),
@@ -280,6 +366,136 @@ fn error_to_http(err: ServiceError) -> (StatusCode, String) {
         _ => StatusCode::BAD_REQUEST,
     };
     (status, format!("{} ({code})", err))
+}
+
+async fn dev_register_device(
+    State(state): State<AppState>,
+    Json(req): Json<DevRegisterDeviceRequest>,
+) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let mut wi = RegisterDeviceWI {
+        account: req.account,
+        device: DeviceRecord {
+            device_id: req.device_id.unwrap_or([req.seed; 16]),
+            enc_pubkey_x25519: [2u8; 32],
+            sig_pubkey_ed25519: sk.verifying_key().to_bytes(),
+            added_slot: 0,
+        },
+        signature_ed25519: vec![],
+    };
+    wi.signature_ed25519 = sk
+        .sign(&crate::auth::signing_bytes_register_device(&wi))
+        .to_bytes()
+        .to_vec();
+
+    let wr = match refine_work_item(WorkItem::RegisterDevice(wi)) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let slot = req.current_slot.unwrap_or(1);
+    let mut s = state.service.lock().expect("state lock");
+    if let Err(e) = apply_work_result(&mut s, wr, slot) {
+        let (status, msg) = error_to_http(e);
+        return (status, msg).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(DevRegisterDeviceResponse {
+            ok: true,
+            account: req.account,
+            pubkey: sk.verifying_key().to_bytes(),
+        }),
+    )
+        .into_response()
+}
+
+async fn dev_sign_challenge(Json(req): Json<DevSignChallengeRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let sig = sk.sign(req.challenge.as_bytes()).to_bytes().to_vec();
+    (
+        StatusCode::OK,
+        Json(DevSignChallengeResponse {
+            ok: true,
+            sig_pubkey_ed25519: sk.verifying_key().to_bytes(),
+            signature_ed25519: sig,
+        }),
+    )
+}
+
+async fn dev_sign_conversation(Json(req): Json<DevSignCreateConversationRequest>) -> impl IntoResponse {
+    let conv_type = match parse_conv_type(&req.conv_type) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+    let sk = dev_signing_key(req.seed);
+    let wi = CreateConversationWI {
+        conv_id: req.conv_id,
+        conv_type,
+        creator: req.creator,
+        initial_participants: req.initial_participants,
+        signature_ed25519: vec![],
+    };
+    let sig = sk
+        .sign(&signing_bytes_create_conversation(&wi))
+        .to_bytes()
+        .to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+async fn dev_sign_send(Json(req): Json<DevSignSendMessageRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = SendMessageWI {
+        conv_id: req.conv_id,
+        sender: req.sender,
+        sender_nonce: req.sender_nonce,
+        cipher_root: req.cipher_root,
+        cipher_len: req.cipher_len,
+        chunk_count: req.chunk_count,
+        envelope_root: req.envelope_root,
+        recipients_hint_count: req.recipients_hint_count,
+        fee_limit: req.fee_limit,
+        bond_limit: req.bond_limit,
+        signature_ed25519: vec![],
+    };
+    let sig = sk.sign(&signing_bytes_send_message(&wi)).to_bytes().to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+async fn dev_sign_read(Json(req): Json<DevSignReadAckRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = AckReadWI {
+        conv_id: req.conv_id,
+        reader: req.reader,
+        seq: req.seq,
+        signature_ed25519: vec![],
+    };
+    let sig = sk.sign(&signing_bytes_ack_read(&wi)).to_bytes().to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+}
+
+async fn dev_sign_pop(Json(req): Json<DevSignPoPVerifyRequest>) -> impl IntoResponse {
+    let sk = dev_signing_key(req.seed);
+    let wi = VerifyPersonhoodWI {
+        account: req.account,
+        provider: req.provider,
+        proof_blob: req.proof_blob,
+        nullifier: req.nullifier,
+        expires_at_slot: req.expires_at_slot,
+        signature_ed25519: vec![],
+    };
+    let sig = sk
+        .sign(&signing_bytes_verify_personhood(&wi))
+        .to_bytes()
+        .to_vec();
+    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
 }
 
 async fn pop_verify(
@@ -470,6 +686,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/pop/verify", post(pop_verify))
+        .route("/v1/dev/register-device", post(dev_register_device))
+        .route("/v1/dev/sign/challenge", post(dev_sign_challenge))
+        .route("/v1/dev/sign/conversation", post(dev_sign_conversation))
+        .route("/v1/dev/sign/send", post(dev_sign_send))
+        .route("/v1/dev/sign/read", post(dev_sign_read))
+        .route("/v1/dev/sign/pop", post(dev_sign_pop))
         .route("/v1/conversations", post(create_conversation))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))

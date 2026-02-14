@@ -38,6 +38,27 @@ async fn ui_shell_routes_are_served() {
 }
 
 #[tokio::test]
+async fn dev_sign_challenge_endpoint_works() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let payload = serde_json::json!({ "seed": 7, "challenge": "hello" });
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/dev/sign/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
 async fn auth_challenge_and_verify_roundtrip() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

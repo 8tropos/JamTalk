@@ -55,6 +55,11 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Acceptance: manual browser interaction can hit JT-006 APIs end-to-end
 - Status: ✅ implemented
 
+### JT-010 (P0) — Dev signature helper flow in browser shell
+- Add dev endpoints for signing challenge/pop/conversation/send/read payloads
+- Add UI buttons to auto-generate signatures and bootstrap device registration for local dev
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.
