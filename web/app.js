@@ -147,6 +147,11 @@ q('btn-status').onclick = async () => {
   q('out-status').textContent = JSON.stringify(await callJson('/v1/status'), null, 2);
 };
 
+q('btn-auth-metrics').onclick = async () => {
+  q('out-auth-metrics').textContent = '...';
+  q('out-auth-metrics').textContent = JSON.stringify(await callJson('/v1/auth/metrics'), null, 2);
+};
+
 q('btn-list-convs').onclick = async () => {
   q('out-list').textContent = '...';
   q('out-list').textContent = JSON.stringify(await callJson('/v1/conversations'), null, 2);

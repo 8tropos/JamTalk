@@ -40,7 +40,8 @@ Harden auth/session safety and move from dev-only UX toward production-safe brow
 
 ### JT-023 (P1) — Basic auth/session metrics endpoint
 - Add counters for challenge issued/verified/expired/replayed
-- Status: ⏳ planned
+- Add `GET /v1/auth/metrics` and UI fetch button
+- Status: ✅ implemented
 
 ### JT-024 (P1) — Mobile interaction polish pass
 - Touch target improvements + keyboard-safe spacing and sticky composer behavior

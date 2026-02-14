@@ -100,6 +100,70 @@ async fn dev_bootstrap_demo_endpoint_works() {
 }
 
 #[tokio::test]
+async fn auth_metrics_endpoint_counts_issue_and_verify() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let challenge_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"wallet-metrics"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(challenge_resp.status(), 200);
+    let body = axum::body::to_bytes(challenge_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let challenge = v["challenge"].as_str().unwrap().to_string();
+
+    let sk = SigningKey::from_bytes(&[42u8; 32]);
+    let sig = sk.sign(challenge.as_bytes()).to_bytes().to_vec();
+    let verify_payload = serde_json::json!({
+        "wallet":"wallet-metrics",
+        "challenge": challenge,
+        "signature_ed25519": sig,
+        "sig_pubkey_ed25519": sk.verifying_key().to_bytes(),
+    });
+    let _verify_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify")
+                .header("content-type", "application/json")
+                .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let metrics_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/auth/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(metrics_resp.status(), 200);
+    let body = axum::body::to_bytes(metrics_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["metrics"]["issued"], 1);
+    assert_eq!(v["metrics"]["verified"], 1);
+}
+
+#[tokio::test]
 async fn auth_challenge_and_verify_roundtrip() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

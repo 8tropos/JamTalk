@@ -33,6 +33,16 @@ pub struct AppState {
     pub service: Arc<Mutex<ServiceState>>,
     pub auth_challenges: Arc<Mutex<BTreeMap<String, AuthChallengeEntry>>>,
     pub auth_consumed_challenges: Arc<Mutex<BTreeSet<String>>>,
+    pub auth_metrics: Arc<Mutex<AuthMetrics>>,
+}
+
+#[derive(Clone, Default, Serialize)]
+pub struct AuthMetrics {
+    pub issued: u64,
+    pub verified: u64,
+    pub expired: u64,
+    pub replayed: u64,
+    pub failed: u64,
 }
 
 #[derive(Clone)]
@@ -47,6 +57,7 @@ impl AppState {
             service: Arc::new(Mutex::new(service)),
             auth_challenges: Arc::new(Mutex::new(BTreeMap::new())),
             auth_consumed_challenges: Arc::new(Mutex::new(BTreeSet::new())),
+            auth_metrics: Arc::new(Mutex::new(AuthMetrics::default())),
         }
     }
 }
@@ -78,6 +89,12 @@ struct StatusResponse {
     conversations: usize,
     messages: usize,
     personhood_verified_accounts: usize,
+}
+
+#[derive(Serialize)]
+struct AuthMetricsResponse {
+    ok: bool,
+    metrics: AuthMetrics,
 }
 
 #[derive(Deserialize)]
@@ -442,6 +459,11 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+async fn auth_metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let m = state.auth_metrics.lock().expect("metrics lock").clone();
+    Json(AuthMetricsResponse { ok: true, metrics: m })
+}
+
 fn random_challenge_hex() -> String {
     let mut buf = [0u8; 32];
     OsRng.fill_bytes(&mut buf);
@@ -515,6 +537,10 @@ async fn auth_challenge(
             expires_at_unix_s: expires_at,
         },
     );
+    {
+        let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+        metrics.issued += 1;
+    }
 
     (
         StatusCode::OK,
@@ -546,6 +572,11 @@ async fn auth_verify(
 
     let now = now_unix_s();
     if expected_entry.expires_at_unix_s <= now {
+        {
+            let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+            metrics.expired += 1;
+            metrics.failed += 1;
+        }
         return api_error(
             StatusCode::UNAUTHORIZED,
             "AUTH_CHALLENGE_EXPIRED",
@@ -569,6 +600,11 @@ async fn auth_verify(
             .lock()
             .expect("consumed lock");
         if consumed.contains(&req.challenge) {
+            {
+                let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+                metrics.replayed += 1;
+                metrics.failed += 1;
+            }
             return api_error(
                 StatusCode::UNAUTHORIZED,
                 "AUTH_CHALLENGE_REPLAY",
@@ -607,6 +643,10 @@ async fn auth_verify(
     };
 
     if !ok {
+        {
+            let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+            metrics.failed += 1;
+        }
         return api_error(
             StatusCode::UNAUTHORIZED,
             "AUTH_SIGNATURE_VERIFY_FAILED",
@@ -625,6 +665,11 @@ async fn auth_verify(
             .lock()
             .expect("consumed lock");
         consumed.insert(req.challenge.clone());
+    }
+
+    {
+        let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+        metrics.verified += 1;
     }
 
     (
@@ -657,6 +702,11 @@ async fn auth_verify_wallet(
 
     let now = now_unix_s();
     if expected_entry.expires_at_unix_s <= now {
+        {
+            let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+            metrics.expired += 1;
+            metrics.failed += 1;
+        }
         return api_error(
             StatusCode::UNAUTHORIZED,
             "AUTH_CHALLENGE_EXPIRED",
@@ -680,6 +730,11 @@ async fn auth_verify_wallet(
             .lock()
             .expect("consumed lock");
         if consumed.contains(&req.challenge) {
+            {
+                let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+                metrics.replayed += 1;
+                metrics.failed += 1;
+            }
             return api_error(
                 StatusCode::UNAUTHORIZED,
                 "AUTH_CHALLENGE_REPLAY",
@@ -692,6 +747,10 @@ async fn auth_verify_wallet(
     let recovered = match recover_evm_address(&req.challenge, &req.signature_hex) {
         Ok(v) => v,
         Err(_) => {
+            {
+                let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+                metrics.failed += 1;
+            }
             return api_error(
                 StatusCode::UNAUTHORIZED,
                 "AUTH_SIGNATURE_VERIFY_FAILED",
@@ -702,6 +761,10 @@ async fn auth_verify_wallet(
     };
 
     if !recovered.eq_ignore_ascii_case(&req.wallet) {
+        {
+            let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+            metrics.failed += 1;
+        }
         return api_error(
             StatusCode::UNAUTHORIZED,
             "AUTH_WALLET_MISMATCH",
@@ -720,6 +783,11 @@ async fn auth_verify_wallet(
             .lock()
             .expect("consumed lock");
         consumed.insert(req.challenge.clone());
+    }
+
+    {
+        let mut metrics = state.auth_metrics.lock().expect("metrics lock");
+        metrics.verified += 1;
     }
 
     (
@@ -1506,6 +1574,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/auth/verify-wallet", post(auth_verify_wallet))
+        .route("/v1/auth/metrics", get(auth_metrics))
         .route("/v1/pop/verify", post(pop_verify))
         .route("/v1/blobs/register", post(register_blob))
         .route("/v1/conversations", get(list_conversations).post(create_conversation))
