@@ -1,4 +1,4 @@
-use axum::{body::Body, http::Request};
+use axum::{body::{to_bytes, Body}, http::Request};
 use ed25519_dalek::{Signer, SigningKey};
 use jam_messenger::auth::{
     signing_bytes_ack_read, signing_bytes_add_member, signing_bytes_create_conversation,
@@ -1094,4 +1094,41 @@ async fn conversations_send_and_read_endpoints_happy_path() {
         .await
         .unwrap();
     assert_eq!(read_resp.status(), 200);
+}
+
+#[tokio::test]
+async fn message_status_endpoint_reports_readers() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let bootstrap_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/dev/bootstrap-demo")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bootstrap_resp.status(), 200);
+
+    let status_resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/messages/status?conv_id=%5B9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9%5D&seq=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(status_resp.status(), 200);
+
+    let body = to_bytes(status_resp.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["read_count"], 1);
+    assert_eq!(json["member_count"], 2);
 }

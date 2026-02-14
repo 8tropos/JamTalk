@@ -349,6 +349,30 @@ struct MessageDetailResponse {
 }
 
 #[derive(Deserialize)]
+struct MessageStatusQuery {
+    conv_id: String,
+    seq: u64,
+}
+
+#[derive(Serialize)]
+struct MessageReadStateItem {
+    account: [u8; 32],
+    read: bool,
+    read_seq: u64,
+}
+
+#[derive(Serialize)]
+struct MessageStatusResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    seq: u64,
+    member_count: u32,
+    delivered_count: u32,
+    read_count: u32,
+    readers: Vec<MessageReadStateItem>,
+}
+
+#[derive(Deserialize)]
 struct DevRegisterDeviceRequest {
     seed: u8,
     account: [u8; 32],
@@ -1613,6 +1637,60 @@ async fn message_detail(
         .into_response()
 }
 
+async fn message_status(
+    State(state): State<AppState>,
+    Query(q): Query<MessageStatusQuery>,
+) -> impl IntoResponse {
+    let conv_id = match parse_u8_32_json(&q.conv_id) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let s = state.service.lock().expect("state lock");
+    if !s.message_meta_by_conv_seq.contains_key(&(conv_id, q.seq)) {
+        return api_error(StatusCode::NOT_FOUND, "MSG_NOT_FOUND", "message not found").into_response();
+    }
+
+    let mut readers = s
+        .member_by_conv_account
+        .iter()
+        .filter(|((cid, _), m)| *cid == conv_id && m.active)
+        .map(|((_cid, account), _)| {
+            let read_seq = s
+                .read_cursor_by_conv_account
+                .get(&(conv_id, *account))
+                .copied()
+                .unwrap_or(0);
+            MessageReadStateItem {
+                account: *account,
+                read: read_seq >= q.seq,
+                read_seq,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    readers.sort_by_key(|r| r.account);
+    let member_count = readers.len() as u32;
+    let read_count = readers.iter().filter(|r| r.read).count() as u32;
+
+    (
+        StatusCode::OK,
+        Json(MessageStatusResponse {
+            ok: true,
+            conv_id,
+            seq: q.seq,
+            member_count,
+            delivered_count: member_count,
+            read_count,
+            readers,
+        }),
+    )
+        .into_response()
+}
+
 async fn create_conversation(
     State(state): State<AppState>,
     Json(req): Json<CreateConversationRequest>,
@@ -2037,6 +2115,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/conversations/members", get(list_members))
         .route("/v1/messages", get(list_messages))
         .route("/v1/messages/detail", get(message_detail))
+        .route("/v1/messages/status", get(message_status))
         .route("/v1/dev/register-device", post(dev_register_device))
         .route("/v1/dev/sign/challenge", post(dev_sign_challenge))
         .route("/v1/dev/sign/conversation", post(dev_sign_conversation))

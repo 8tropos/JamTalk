@@ -43,6 +43,7 @@ Current API endpoints:
 - `POST /v1/conversations`
 - `GET /v1/messages?conv_id=<json-[u8;32]>&limit=<1..100>&before_seq=<u64-optional>`
 - `GET /v1/messages/detail?conv_id=<json-[u8;32]>&seq=<u64>`
+- `GET /v1/messages/status?conv_id=<json-[u8;32]>&seq=<u64>`
 - `POST /v1/conversations/add-member`
 - `POST /v1/conversations/remove-member`
 - `POST /v1/conversations/promote-member`
