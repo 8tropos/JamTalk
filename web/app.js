@@ -77,6 +77,13 @@ q('btn-list-convs').onclick = async () => {
   q('out-list').textContent = JSON.stringify(await callJson('/v1/conversations'), null, 2);
 };
 
+async function refreshLists() {
+  const convRes = await callJson('/v1/conversations');
+  const conv = encodeURIComponent(q('conv-id').value.trim());
+  const msgRes = await callJson(`/v1/messages?conv_id=${conv}`);
+  q('out-list').textContent = JSON.stringify({ conversations: convRes, messages: msgRes }, null, 2);
+}
+
 q('btn-list-messages').onclick = async () => {
   q('out-list').textContent = '...';
   const conv = encodeURIComponent(q('conv-id').value.trim());
@@ -264,7 +271,51 @@ q('btn-demo-bootstrap').onclick = async () => {
   if (res.ok) {
     q('conv-id').value = JSON.stringify(res.body.conv_id);
     q('read-seq').value = String(res.body.msg_seq);
+    await refreshLists();
   }
 };
+
+let refreshTimer = null;
+let autoRefreshWanted = false;
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  q('btn-auto-refresh').textContent = 'Start auto-refresh';
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  const ms = Math.max(1500, Number(q('refresh-interval').value || '5000'));
+  refreshTimer = setInterval(async () => {
+    if (document.hidden) return;
+    await refreshLists();
+    q('out-status').textContent = JSON.stringify(await callJson('/v1/status'), null, 2);
+  }, ms);
+  q('btn-auto-refresh').textContent = `Auto-refresh ON (${ms}ms)`;
+}
+
+q('btn-auto-refresh').onclick = async () => {
+  if (autoRefreshWanted) {
+    autoRefreshWanted = false;
+    stopAutoRefresh();
+  } else {
+    autoRefreshWanted = true;
+    await refreshLists();
+    startAutoRefresh();
+  }
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
+    if (autoRefreshWanted) q('btn-auto-refresh').textContent = 'Auto-refresh paused (tab hidden)';
+  } else if (autoRefreshWanted) {
+    startAutoRefresh();
+  }
+});
 
 renderSession();

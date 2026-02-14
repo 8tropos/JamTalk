@@ -141,6 +141,11 @@
           <button id="btn-list-convs">List conversations</button>
           <button id="btn-list-messages">List messages for conv_id</button>
         </div>
+        <div class="row">
+          <input id="refresh-interval" placeholder="refresh ms" value="5000" />
+          <button id="btn-auto-refresh">Start auto-refresh</button>
+        </div>
+        <p class="muted">Auto-refresh pauses when tab is hidden and resumes when visible.</p>
         <pre id="out-list"></pre>
 
         <button id="btn-status">Get status</button>

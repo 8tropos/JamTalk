@@ -70,6 +70,12 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Add UI controls to fetch and render these lists
 - Status: ✅ implemented
 
+### JT-013 (P0) — UI auto-refresh with mobile-safe throttling
+- Add periodic polling for status/conversations/messages
+- Add start/stop controls and configurable interval
+- Pause refresh when tab hidden and auto-resume when visible
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.
