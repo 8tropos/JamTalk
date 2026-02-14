@@ -7,6 +7,26 @@ on:
     branches: [ main ]
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (fmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rustfmt check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (all targets/features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -24,3 +44,35 @@ jobs:
 
       - name: Test (pop-http feature)
         run: PROPTEST_CASES=16 cargo test --all-targets --features pop-http
+
+  smoke-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Start API
+        run: |
+          cargo run --bin jamtalk-api > /tmp/jamtalk-api.log 2>&1 &
+          echo $! > /tmp/jamtalk-api.pid
+          sleep 3
+
+      - name: Smoke routes
+        run: |
+          curl -fsS http://127.0.0.1:8080/health >/tmp/health.json
+          curl -fsS http://127.0.0.1:8080/v1/status >/tmp/status.json
+          curl -fsS http://127.0.0.1:8080/ >/tmp/index.html
+
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/jamtalk-api.pid ]; then
+            kill "$(cat /tmp/jamtalk-api.pid)" || true
+          fi
+          tail -n 80 /tmp/jamtalk-api.log || true

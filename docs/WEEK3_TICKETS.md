@@ -44,4 +44,4 @@ Move from MVP-hardening into beta-readiness: safer auth/session lifecycle, bette
 ### JT-032 (P1) — CI quality gate expansion
 - Add clippy/fmt checks (when toolchain components available)
 - Include API smoke route checks for main endpoints
-- Status: ⏳ planned
+- Status: ✅ implemented
