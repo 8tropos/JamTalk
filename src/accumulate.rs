@@ -160,13 +160,8 @@ pub fn apply_work_result(
                 .copied()
                 .ok_or(ServiceError::ConversationNotFound)?;
 
-            let msg_id = compute_msg_id(
-                wi.conv_id,
-                seq,
-                wi.sender,
-                wi.cipher_root,
-                wi.sender_nonce,
-            );
+            let msg_id =
+                compute_msg_id(wi.conv_id, seq, wi.sender, wi.cipher_root, wi.sender_nonce);
 
             state.message_meta_by_conv_seq.insert(
                 (wi.conv_id, seq),
@@ -277,7 +272,9 @@ pub fn apply_work_result(
             }
 
             state.next_seq_by_conversation.insert(wi.conv_id, 1);
-            Ok(Event::ConversationCreated { conv_id: wi.conv_id })
+            Ok(Event::ConversationCreated {
+                conv_id: wi.conv_id,
+            })
         }
 
         WorkResult::AddMember(wi) => {
@@ -320,7 +317,10 @@ pub fn apply_work_result(
                 return Err(ServiceError::NotAdmin);
             }
 
-            if let Some(m) = state.member_by_conv_account.get_mut(&(wi.conv_id, wi.member)) {
+            if let Some(m) = state
+                .member_by_conv_account
+                .get_mut(&(wi.conv_id, wi.member))
+            {
                 m.active = false;
                 Ok(Event::Noop)
             } else {

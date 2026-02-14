@@ -1,4 +1,7 @@
-use axum::{body::{to_bytes, Body}, http::Request};
+use axum::{
+    body::{to_bytes, Body},
+    http::Request,
+};
 use ed25519_dalek::{Signer, SigningKey};
 use jam_messenger::auth::{
     signing_bytes_ack_read, signing_bytes_add_member, signing_bytes_create_conversation,
@@ -67,13 +70,23 @@ async fn ui_shell_routes_are_served() {
 
     let js = app
         .clone()
-        .oneshot(Request::builder().uri("/app.js").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/app.js")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(js.status(), 200);
 
     let css = app
-        .oneshot(Request::builder().uri("/styles.css").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/styles.css")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(css.status(), 200);
@@ -493,16 +506,14 @@ async fn auth_verify_wallet_roundtrip() {
                 .method("POST")
                 .uri("/v1/auth/verify-wallet")
                 .header("content-type", "application/json")
-                .body(
-                    Body::from(
-                        serde_json::json!({
-                            "wallet": wallet,
-                            "challenge": challenge,
-                            "signature_hex": sig_hex,
-                        })
-                        .to_string(),
-                    ),
-                )
+                .body(Body::from(
+                    serde_json::json!({
+                        "wallet": wallet,
+                        "challenge": challenge,
+                        "signature_hex": sig_hex,
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -527,7 +538,10 @@ async fn pop_verify_endpoint_accepts_valid_request() {
         },
         signature_ed25519: vec![],
     };
-    reg.signature_ed25519 = sk.sign(&signing_bytes_register_device(&reg)).to_bytes().to_vec();
+    reg.signature_ed25519 = sk
+        .sign(&signing_bytes_register_device(&reg))
+        .to_bytes()
+        .to_vec();
     let rr = refine_work_item(WorkItem::RegisterDevice(reg)).unwrap();
     apply_work_result(&mut state, rr, 1).unwrap();
 
@@ -587,7 +601,10 @@ async fn blob_register_endpoint_accepts_text_payload() {
         },
         signature_ed25519: vec![],
     };
-    reg.signature_ed25519 = sk.sign(&signing_bytes_register_device(&reg)).to_bytes().to_vec();
+    reg.signature_ed25519 = sk
+        .sign(&signing_bytes_register_device(&reg))
+        .to_bytes()
+        .to_vec();
     let rr = refine_work_item(WorkItem::RegisterDevice(reg)).unwrap();
     apply_work_result(&mut state, rr, 1).unwrap();
 
@@ -806,7 +823,10 @@ async fn conversation_member_add_remove_endpoints_happy_path() {
         member: a3,
         signature_ed25519: vec![],
     };
-    awi.signature_ed25519 = sk1.sign(&signing_bytes_add_member(&awi)).to_bytes().to_vec();
+    awi.signature_ed25519 = sk1
+        .sign(&signing_bytes_add_member(&awi))
+        .to_bytes()
+        .to_vec();
 
     let add_resp = app
         .clone()
@@ -815,18 +835,16 @@ async fn conversation_member_add_remove_endpoints_happy_path() {
                 .method("POST")
                 .uri("/v1/conversations/add-member")
                 .header("content-type", "application/json")
-                .body(
-                    Body::from(
-                        serde_json::json!({
-                            "conv_id": conv_id,
-                            "actor": a1,
-                            "member": a3,
-                            "signature_ed25519": awi.signature_ed25519,
-                            "current_slot": 3
-                        })
-                        .to_string(),
-                    ),
-                )
+                .body(Body::from(
+                    serde_json::json!({
+                        "conv_id": conv_id,
+                        "actor": a1,
+                        "member": a3,
+                        "signature_ed25519": awi.signature_ed25519,
+                        "current_slot": 3
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -912,18 +930,16 @@ async fn conversation_member_add_remove_endpoints_happy_path() {
                 .method("POST")
                 .uri("/v1/conversations/remove-member")
                 .header("content-type", "application/json")
-                .body(
-                    Body::from(
-                        serde_json::json!({
-                            "conv_id": conv_id,
-                            "actor": a1,
-                            "member": a3,
-                            "signature_ed25519": rwi.signature_ed25519,
-                            "current_slot": 4
-                        })
-                        .to_string(),
-                    ),
-                )
+                .body(Body::from(
+                    serde_json::json!({
+                        "conv_id": conv_id,
+                        "actor": a1,
+                        "member": a3,
+                        "signature_ed25519": rwi.signature_ed25519,
+                        "current_slot": 4
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -1035,7 +1051,10 @@ async fn conversations_send_and_read_endpoints_happy_path() {
         bond_limit: 1_000_000,
         signature_ed25519: vec![],
     };
-    swi.signature_ed25519 = sk1.sign(&signing_bytes_send_message(&swi)).to_bytes().to_vec();
+    swi.signature_ed25519 = sk1
+        .sign(&signing_bytes_send_message(&swi))
+        .to_bytes()
+        .to_vec();
 
     let send_payload = serde_json::json!({
         "conv_id": conv_id,
@@ -1126,7 +1145,9 @@ async fn message_status_endpoint_reports_readers() {
         .unwrap();
     assert_eq!(status_resp.status(), 200);
 
-    let body = to_bytes(status_resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = to_bytes(status_resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["ok"], true);
     assert_eq!(json["read_count"], 1);
@@ -1168,7 +1189,10 @@ async fn send_message_idempotency_key_replays_original_response() {
         bond_limit: 1_000_000,
         signature_ed25519: vec![],
     };
-    wi.signature_ed25519 = sk.sign(&signing_bytes_send_message(&wi)).to_bytes().to_vec();
+    wi.signature_ed25519 = sk
+        .sign(&signing_bytes_send_message(&wi))
+        .to_bytes()
+        .to_vec();
 
     let payload = serde_json::json!({
         "conv_id": conv_id,
@@ -1256,7 +1280,10 @@ async fn send_message_idempotency_key_rejects_different_payload() {
             bond_limit: 1_000_000,
             signature_ed25519: vec![],
         };
-        wi.signature_ed25519 = sk.sign(&signing_bytes_send_message(&wi)).to_bytes().to_vec();
+        wi.signature_ed25519 = sk
+            .sign(&signing_bytes_send_message(&wi))
+            .to_bytes()
+            .to_vec();
 
         let payload = serde_json::json!({
             "conv_id": conv_id,

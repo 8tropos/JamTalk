@@ -63,7 +63,9 @@ mod tests {
         let sk = signing_key();
 
         let mut state = ServiceState::default();
-        state.create_dm_conversation(conv, sender, [2u8; 32]).unwrap();
+        state
+            .create_dm_conversation(conv, sender, [2u8; 32])
+            .unwrap();
         register_sender_device(&mut state, sender, &sk);
 
         let chunks = vec![b"hello encrypted world".to_vec()];
@@ -114,7 +116,9 @@ mod tests {
         let sk = signing_key();
 
         let mut state = ServiceState::default();
-        state.create_dm_conversation(conv, sender, [2u8; 32]).unwrap();
+        state
+            .create_dm_conversation(conv, sender, [2u8; 32])
+            .unwrap();
         register_sender_device(&mut state, sender, &sk);
 
         let chunks = vec![b"hello encrypted world".to_vec()];
@@ -158,7 +162,12 @@ mod tests {
 
     #[test]
     fn merkle_proof_roundtrip() {
-        let chunks = vec![b"c0".to_vec(), b"c1".to_vec(), b"c2".to_vec(), b"c3".to_vec()];
+        let chunks = vec![
+            b"c0".to_vec(),
+            b"c1".to_vec(),
+            b"c2".to_vec(),
+            b"c3".to_vec(),
+        ];
         let root = crypto::merkle_root(&chunks);
         let proof = crypto::build_merkle_proof(&chunks, 2).unwrap();
         assert!(crypto::verify_merkle_proof(&chunks[2], &proof, root));
@@ -171,10 +180,17 @@ mod tests {
         let sk = signing_key();
 
         let mut state = ServiceState::default();
-        state.create_dm_conversation(conv, sender, [2u8; 32]).unwrap();
+        state
+            .create_dm_conversation(conv, sender, [2u8; 32])
+            .unwrap();
         register_sender_device(&mut state, sender, &sk);
 
-        let chunks = vec![b"c0".to_vec(), b"c1".to_vec(), b"c2".to_vec(), b"c3".to_vec()];
+        let chunks = vec![
+            b"c0".to_vec(),
+            b"c1".to_vec(),
+            b"c2".to_vec(),
+            b"c3".to_vec(),
+        ];
         let root = crypto::merkle_root(&chunks);
 
         let mut blob = RegisterBlobWI {
@@ -204,7 +220,9 @@ mod tests {
         let sk_recipient = SigningKey::from_bytes(&[6u8; 32]);
 
         let mut state = ServiceState::default();
-        state.create_dm_conversation(conv, sender, recipient).unwrap();
+        state
+            .create_dm_conversation(conv, sender, recipient)
+            .unwrap();
         register_sender_device(&mut state, sender, &sk_sender);
         register_sender_device(&mut state, recipient, &sk_recipient);
 
@@ -238,7 +256,8 @@ mod tests {
         };
         wi.signature_ed25519 = sk_sender
             .sign(&auth::signing_bytes_send_message(&wi))
-            .to_bytes().to_vec();
+            .to_bytes()
+            .to_vec();
         let r = refine_work_item(WorkItem::SendMessage(wi)).unwrap();
         let ev = apply_work_result(&mut state, r, 11).unwrap();
         let msg_id = match ev {
@@ -257,7 +276,8 @@ mod tests {
         };
         reject.signature_ed25519 = sk_recipient
             .sign(&auth::signing_bytes_reject_message(&reject))
-            .to_bytes().to_vec();
+            .to_bytes()
+            .to_vec();
         let rr = refine_work_item(WorkItem::RejectMessage(reject)).unwrap();
         let ev = apply_work_result(&mut state, rr, 12).unwrap();
         assert!(matches!(ev, Event::BondSlashed { .. }));

@@ -24,7 +24,10 @@ fn setup_state_with_sender() -> (ServiceState, AccountId, ConversationId, Signin
         },
         signature_ed25519: vec![],
     };
-    reg.signature_ed25519 = sk.sign(&signing_bytes_register_device(&reg)).to_bytes().to_vec();
+    reg.signature_ed25519 = sk
+        .sign(&signing_bytes_register_device(&reg))
+        .to_bytes()
+        .to_vec();
     let rr = refine_work_item(WorkItem::RegisterDevice(reg)).unwrap();
     apply_work_result(&mut state, rr, 1).unwrap();
 
@@ -38,7 +41,10 @@ fn setup_state_with_sender() -> (ServiceState, AccountId, ConversationId, Signin
         sender,
         signature_ed25519: vec![],
     };
-    blob.signature_ed25519 = sk.sign(&signing_bytes_register_blob(&blob)).to_bytes().to_vec();
+    blob.signature_ed25519 = sk
+        .sign(&signing_bytes_register_blob(&blob))
+        .to_bytes()
+        .to_vec();
     let br = refine_work_item(WorkItem::RegisterBlob(blob)).unwrap();
     apply_work_result(&mut state, br, 2).unwrap();
 

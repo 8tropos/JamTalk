@@ -8,9 +8,8 @@ const SIGNING_DOMAIN: &[u8] = b"JAM-MSG-SVC";
 const SIGNING_VERSION: u16 = 2;
 
 fn domain_separated_payload(type_tag: &[u8], payload: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(
-        SIGNING_DOMAIN.len() + 1 + 2 + type_tag.len() + 1 + payload.len(),
-    );
+    let mut out =
+        Vec::with_capacity(SIGNING_DOMAIN.len() + 1 + 2 + type_tag.len() + 1 + payload.len());
     out.extend_from_slice(SIGNING_DOMAIN);
     out.push(0x1f);
     out.extend_from_slice(&SIGNING_VERSION.to_le_bytes());

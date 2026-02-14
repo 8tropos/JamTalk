@@ -103,8 +103,11 @@ impl PoPVerifier for WorldIdVerifier {
             return Err(ServiceError::PoPInvalid);
         }
 
-        let expected =
-            compute_worldid_account_hash(account, &payload.nullifier_hash, &payload.external_nullifier);
+        let expected = compute_worldid_account_hash(
+            account,
+            &payload.nullifier_hash,
+            &payload.external_nullifier,
+        );
         if payload.account_hash != expected {
             return Err(ServiceError::PoPInvalid);
         }
@@ -245,7 +248,8 @@ impl HttpPoPClient for ReqwestHttpPoPClient {
 
         let parsed: HttpVerifyResponseWire = resp.json().map_err(|_| ServiceError::PoPInvalid)?;
 
-        if !parsed.provider.eq_ignore_ascii_case(&req.provider) || parsed.nullifier != req.nullifier {
+        if !parsed.provider.eq_ignore_ascii_case(&req.provider) || parsed.nullifier != req.nullifier
+        {
             return Err(ServiceError::PoPInvalid);
         }
 
@@ -294,7 +298,10 @@ impl<C: HttpPoPClient + Send + Sync> PoPVerifier for HttpPoPVerifier<C> {
         };
 
         let res = self.client.verify(&req)?;
-        if res.accepted && res.provider.eq_ignore_ascii_case(self.provider_name) && res.nullifier == *nullifier {
+        if res.accepted
+            && res.provider.eq_ignore_ascii_case(self.provider_name)
+            && res.nullifier == *nullifier
+        {
             Ok(())
         } else {
             Err(ServiceError::PoPInvalid)
@@ -335,7 +342,10 @@ impl PoPRegistry {
         {
             if let (Some(provider), Some(endpoint)) = (provider.as_deref(), endpoint.as_deref()) {
                 let leaked: &'static str = Box::leak(provider.to_string().into_boxed_str());
-                r.add_verifier(HttpPoPVerifier::new(leaked, ReqwestHttpPoPClient::new(endpoint)));
+                r.add_verifier(HttpPoPVerifier::new(
+                    leaked,
+                    ReqwestHttpPoPClient::new(endpoint),
+                ));
             }
         }
 
@@ -385,7 +395,13 @@ impl PoPRegistry {
             return Err(ServiceError::PoPInvalid);
         };
 
-        verifier.verify(account, nullifier, proof_blob, current_slot, expires_at_slot)
+        verifier.verify(
+            account,
+            nullifier,
+            proof_blob,
+            current_slot,
+            expires_at_slot,
+        )
     }
 }
 

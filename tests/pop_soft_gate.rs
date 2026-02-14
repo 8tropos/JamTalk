@@ -9,7 +9,12 @@ use jam_messenger::pop::{
 };
 use jam_messenger::*;
 
-fn register_device(state: &mut ServiceState, account: AccountId, sk: &SigningKey, device_id: [u8; 16]) {
+fn register_device(
+    state: &mut ServiceState,
+    account: AccountId,
+    sk: &SigningKey,
+    device_id: [u8; 16],
+) {
     let mut wi = RegisterDeviceWI {
         account,
         device: DeviceRecord {
@@ -20,7 +25,10 @@ fn register_device(state: &mut ServiceState, account: AccountId, sk: &SigningKey
         },
         signature_ed25519: vec![],
     };
-    wi.signature_ed25519 = sk.sign(&signing_bytes_register_device(&wi)).to_bytes().to_vec();
+    wi.signature_ed25519 = sk
+        .sign(&signing_bytes_register_device(&wi))
+        .to_bytes()
+        .to_vec();
     let wr = refine_work_item(WorkItem::RegisterDevice(wi)).unwrap();
     apply_work_result(state, wr, 1).unwrap();
 }
@@ -48,7 +56,10 @@ fn unverified_sender_is_soft_limited() {
         sender,
         signature_ed25519: vec![],
     };
-    blob.signature_ed25519 = sk.sign(&signing_bytes_register_blob(&blob)).to_bytes().to_vec();
+    blob.signature_ed25519 = sk
+        .sign(&signing_bytes_register_blob(&blob))
+        .to_bytes()
+        .to_vec();
     let br = refine_work_item(WorkItem::RegisterBlob(blob)).unwrap();
     apply_work_result(&mut state, br, 2).unwrap();
 
@@ -65,7 +76,10 @@ fn unverified_sender_is_soft_limited() {
         bond_limit: 10_000_000,
         signature_ed25519: vec![],
     };
-    msg.signature_ed25519 = sk.sign(&signing_bytes_send_message(&msg)).to_bytes().to_vec();
+    msg.signature_ed25519 = sk
+        .sign(&signing_bytes_send_message(&msg))
+        .to_bytes()
+        .to_vec();
     let mr = refine_work_item(WorkItem::SendMessage(msg)).unwrap();
     let err = apply_work_result(&mut state, mr, 3).unwrap_err();
     assert_eq!(err.code(), ErrorCode::ErrPoPRequired as u16);
@@ -109,7 +123,10 @@ fn verified_sender_can_exceed_soft_limits() {
         sender,
         signature_ed25519: vec![],
     };
-    blob.signature_ed25519 = sk.sign(&signing_bytes_register_blob(&blob)).to_bytes().to_vec();
+    blob.signature_ed25519 = sk
+        .sign(&signing_bytes_register_blob(&blob))
+        .to_bytes()
+        .to_vec();
     let br = refine_work_item(WorkItem::RegisterBlob(blob)).unwrap();
     apply_work_result(&mut state, br, 3).unwrap();
 
@@ -126,7 +143,10 @@ fn verified_sender_can_exceed_soft_limits() {
         bond_limit: 10_000_000,
         signature_ed25519: vec![],
     };
-    msg.signature_ed25519 = sk.sign(&signing_bytes_send_message(&msg)).to_bytes().to_vec();
+    msg.signature_ed25519 = sk
+        .sign(&signing_bytes_send_message(&msg))
+        .to_bytes()
+        .to_vec();
     let mr = refine_work_item(WorkItem::SendMessage(msg)).unwrap();
     let ev = apply_work_result(&mut state, mr, 4).unwrap();
     assert!(matches!(ev, Event::MessageCommitted { .. }));

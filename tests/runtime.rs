@@ -6,8 +6,10 @@ use jam_messenger::*;
 
 #[test]
 fn process_register_device_via_host_runtime() {
-    let mut host = InMemoryHost::default();
-    host.slot = 1;
+    let mut host = InMemoryHost {
+        slot: 1,
+        ..InMemoryHost::default()
+    };
 
     let account = [1u8; 32];
     let sk = SigningKey::from_bytes(&[5u8; 32]);
@@ -22,7 +24,10 @@ fn process_register_device_via_host_runtime() {
         },
         signature_ed25519: vec![],
     };
-    wi.signature_ed25519 = sk.sign(&signing_bytes_register_device(&wi)).to_bytes().to_vec();
+    wi.signature_ed25519 = sk
+        .sign(&signing_bytes_register_device(&wi))
+        .to_bytes()
+        .to_vec();
 
     let ev = process_work_item_with_host(&mut host, WorkItem::RegisterDevice(wi)).unwrap();
     assert!(matches!(ev, Event::Noop));

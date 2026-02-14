@@ -18,7 +18,7 @@ pub fn merkle_root(chunks: &[Vec<u8>]) -> Hash256 {
 
     let mut layer: Vec<Hash256> = chunks.iter().map(|c| h256(c)).collect();
     while layer.len() > 1 {
-        let mut next = Vec::with_capacity((layer.len() + 1) / 2);
+        let mut next = Vec::with_capacity(layer.len().div_ceil(2));
         let mut i = 0;
         while i < layer.len() {
             if i + 1 < layer.len() {
@@ -46,12 +46,16 @@ pub fn build_merkle_proof(chunks: &[Vec<u8>], index: u32) -> Option<ChunkProof> 
     let mut siblings = Vec::new();
 
     while layer.len() > 1 {
-        let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sibling_idx = if idx.is_multiple_of(2) {
+            idx + 1
+        } else {
+            idx - 1
+        };
         if sibling_idx < layer.len() {
             siblings.push(layer[sibling_idx]);
         }
 
-        let mut next = Vec::with_capacity((layer.len() + 1) / 2);
+        let mut next = Vec::with_capacity(layer.len().div_ceil(2));
         let mut i = 0;
         while i < layer.len() {
             if i + 1 < layer.len() {
@@ -78,7 +82,7 @@ pub fn verify_merkle_proof(leaf: &[u8], proof: &ChunkProof, root: Hash256) -> bo
 
     for sibling in &proof.siblings {
         let mut buf = Vec::with_capacity(64);
-        if idx % 2 == 0 {
+        if idx.is_multiple_of(2) {
             buf.extend_from_slice(&current);
             buf.extend_from_slice(sibling);
         } else {

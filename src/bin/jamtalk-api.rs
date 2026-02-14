@@ -1,5 +1,5 @@
-use std::net::SocketAddr;
 use jam_messenger::{web_api, ServiceState};
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {

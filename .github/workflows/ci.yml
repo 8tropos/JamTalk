@@ -61,11 +61,20 @@ jobs:
         run: |
           cargo run --bin jamtalk-api > /tmp/jamtalk-api.log 2>&1 &
           echo $! > /tmp/jamtalk-api.pid
-          sleep 3
+
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become ready in time"
+          exit 1
 
       - name: Smoke routes
         run: |
-          curl -fsS http://127.0.0.1:8080/health >/tmp/health.json
           curl -fsS http://127.0.0.1:8080/v1/status >/tmp/status.json
           curl -fsS http://127.0.0.1:8080/ >/tmp/index.html
 

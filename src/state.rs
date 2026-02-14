@@ -102,11 +102,7 @@ impl ServiceState {
         Ok(())
     }
 
-    pub fn build_chunk_proof(
-        &self,
-        root: Hash256,
-        index: u32,
-    ) -> Result<ChunkProof, ServiceError> {
+    pub fn build_chunk_proof(&self, root: Hash256, index: u32) -> Result<ChunkProof, ServiceError> {
         let meta = self
             .blob_meta_by_root
             .get(&root)

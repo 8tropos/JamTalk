@@ -11,9 +11,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use rand_core::{OsRng, RngCore};
 use ed25519_dalek::{Signer, SigningKey};
 use k256::ecdsa::{RecoveryId, Signature as SecpSignature, VerifyingKey};
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
@@ -38,6 +38,13 @@ pub struct AppState {
     pub auth_metrics: Arc<Mutex<AuthMetrics>>,
     pub auth_rate_buckets: Arc<Mutex<BTreeMap<String, RateBucket>>>,
     pub send_idempotency: Arc<Mutex<BTreeMap<String, SendIdempotencyEntry>>>,
+    pub runtime_config: RuntimeConfig,
+}
+
+#[derive(Clone, Serialize)]
+pub struct RuntimeConfig {
+    pub profile: String,
+    pub allowed_origins: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -71,6 +78,18 @@ pub struct AuthChallengeEntry {
 
 impl AppState {
     pub fn new(service: ServiceState) -> Self {
+        let profile = std::env::var("JAMTALK_ENV_PROFILE").unwrap_or_else(|_| "local".to_string());
+        let allowed_origins = std::env::var("JAMTALK_ALLOWED_ORIGINS")
+            .ok()
+            .map(|v| {
+                v.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| vec!["http://127.0.0.1:8080".to_string()]);
+
         Self {
             service: Arc::new(Mutex::new(service)),
             auth_challenges: Arc::new(Mutex::new(BTreeMap::new())),
@@ -78,6 +97,10 @@ impl AppState {
             auth_metrics: Arc::new(Mutex::new(AuthMetrics::default())),
             auth_rate_buckets: Arc::new(Mutex::new(BTreeMap::new())),
             send_idempotency: Arc::new(Mutex::new(BTreeMap::new())),
+            runtime_config: RuntimeConfig {
+                profile,
+                allowed_origins,
+            },
         }
     }
 }
@@ -91,6 +114,7 @@ struct HealthResponse {
     ok: bool,
     product: &'static str,
     phase: &'static str,
+    profile: String,
 }
 
 #[derive(Serialize)]
@@ -111,6 +135,13 @@ struct StatusResponse {
     conversations: usize,
     messages: usize,
     personhood_verified_accounts: usize,
+}
+
+#[derive(Serialize)]
+struct RuntimeConfigResponse {
+    ok: bool,
+    profile: String,
+    allowed_origins: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -550,11 +581,12 @@ const UI_HTML: &str = include_str!("../web/index.html");
 const UI_CSS: &str = include_str!("../web/styles.css");
 const UI_JS: &str = include_str!("../web/app.js");
 
-async fn health() -> impl IntoResponse {
+async fn health(State(state): State<AppState>) -> impl IntoResponse {
     Json(HealthResponse {
         ok: true,
         product: "JamTalk",
         phase: "MVP / Phase 2.4",
+        profile: state.runtime_config.profile.clone(),
     })
 }
 
@@ -583,9 +615,20 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+async fn runtime_config(State(state): State<AppState>) -> impl IntoResponse {
+    Json(RuntimeConfigResponse {
+        ok: true,
+        profile: state.runtime_config.profile.clone(),
+        allowed_origins: state.runtime_config.allowed_origins.clone(),
+    })
+}
+
 async fn auth_metrics(State(state): State<AppState>) -> impl IntoResponse {
     let m = state.auth_metrics.lock().expect("metrics lock").clone();
-    Json(AuthMetricsResponse { ok: true, metrics: m })
+    Json(AuthMetricsResponse {
+        ok: true,
+        metrics: m,
+    })
 }
 
 async fn ops_rate_limits(State(state): State<AppState>) -> impl IntoResponse {
@@ -618,7 +661,8 @@ async fn ops_rate_limits_reset(
     Json(req): Json<OpsRateLimitResetRequest>,
 ) -> impl IntoResponse {
     if req.key.trim().is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "OPS_KEY_REQUIRED", "key required").into_response();
+        return api_error(StatusCode::BAD_REQUEST, "OPS_KEY_REQUIRED", "key required")
+            .into_response();
     }
 
     let removed = state
@@ -657,8 +701,8 @@ fn consume_auth_rate_token(state: &AppState, key: &str) -> bool {
     });
 
     let elapsed = now.saturating_sub(bucket.last_refill_unix_s) as f64;
-    bucket.tokens = (bucket.tokens + elapsed * AUTH_RATE_BUCKET_REFILL_PER_S)
-        .min(AUTH_RATE_BUCKET_CAPACITY);
+    bucket.tokens =
+        (bucket.tokens + elapsed * AUTH_RATE_BUCKET_REFILL_PER_S).min(AUTH_RATE_BUCKET_CAPACITY);
     bucket.last_refill_unix_s = now;
 
     if bucket.tokens < 1.0 {
@@ -711,8 +755,12 @@ async fn auth_logout(
     Json(req): Json<LogoutRequest>,
 ) -> impl IntoResponse {
     if req.wallet.trim().is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "AUTH_WALLET_REQUIRED", "wallet required")
-            .into_response();
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "AUTH_WALLET_REQUIRED",
+            "wallet required",
+        )
+        .into_response();
     }
 
     let removed_entry = {
@@ -745,8 +793,12 @@ async fn auth_challenge(
     Json(req): Json<ChallengeRequest>,
 ) -> impl IntoResponse {
     if req.wallet.trim().is_empty() {
-        return api_error(StatusCode::BAD_REQUEST, "AUTH_WALLET_REQUIRED", "wallet required")
-            .into_response();
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "AUTH_WALLET_REQUIRED",
+            "wallet required",
+        )
+        .into_response();
     }
 
     if !consume_auth_rate_token(&state, &format!("challenge:{}", req.wallet)) {
@@ -1008,7 +1060,7 @@ async fn auth_verify_wallet(
                 "AUTH_SIGNATURE_VERIFY_FAILED",
                 "signature verify failed",
             )
-            .into_response()
+            .into_response();
         }
     };
 
@@ -1209,7 +1261,9 @@ async fn dev_sign_challenge(Json(req): Json<DevSignChallengeRequest>) -> impl In
     )
 }
 
-async fn dev_sign_conversation(Json(req): Json<DevSignCreateConversationRequest>) -> impl IntoResponse {
+async fn dev_sign_conversation(
+    Json(req): Json<DevSignCreateConversationRequest>,
+) -> impl IntoResponse {
     let conv_type = match parse_conv_type(&req.conv_type) {
         Ok(v) => v,
         Err(e) => {
@@ -1229,7 +1283,14 @@ async fn dev_sign_conversation(Json(req): Json<DevSignCreateConversationRequest>
         .sign(&signing_bytes_create_conversation(&wi))
         .to_bytes()
         .to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_send(Json(req): Json<DevSignSendMessageRequest>) -> impl IntoResponse {
@@ -1247,8 +1308,18 @@ async fn dev_sign_send(Json(req): Json<DevSignSendMessageRequest>) -> impl IntoR
         bond_limit: req.bond_limit,
         signature_ed25519: vec![],
     };
-    let sig = sk.sign(&signing_bytes_send_message(&wi)).to_bytes().to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    let sig = sk
+        .sign(&signing_bytes_send_message(&wi))
+        .to_bytes()
+        .to_vec();
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_add_member(Json(req): Json<DevSignAddMemberRequest>) -> impl IntoResponse {
@@ -1260,7 +1331,14 @@ async fn dev_sign_add_member(Json(req): Json<DevSignAddMemberRequest>) -> impl I
         signature_ed25519: vec![],
     };
     let sig = sk.sign(&signing_bytes_add_member(&wi)).to_bytes().to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_remove_member(Json(req): Json<DevSignRemoveMemberRequest>) -> impl IntoResponse {
@@ -1271,8 +1349,18 @@ async fn dev_sign_remove_member(Json(req): Json<DevSignRemoveMemberRequest>) -> 
         member: req.member,
         signature_ed25519: vec![],
     };
-    let sig = sk.sign(&signing_bytes_remove_member(&wi)).to_bytes().to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    let sig = sk
+        .sign(&signing_bytes_remove_member(&wi))
+        .to_bytes()
+        .to_vec();
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_promote_member(Json(req): Json<DevSignRoleMutationRequest>) -> impl IntoResponse {
@@ -1283,8 +1371,18 @@ async fn dev_sign_promote_member(Json(req): Json<DevSignRoleMutationRequest>) ->
         member: req.member,
         signature_ed25519: vec![],
     };
-    let sig = sk.sign(&signing_bytes_promote_member(&wi)).to_bytes().to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    let sig = sk
+        .sign(&signing_bytes_promote_member(&wi))
+        .to_bytes()
+        .to_vec();
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_demote_member(Json(req): Json<DevSignRoleMutationRequest>) -> impl IntoResponse {
@@ -1295,8 +1393,18 @@ async fn dev_sign_demote_member(Json(req): Json<DevSignRoleMutationRequest>) -> 
         member: req.member,
         signature_ed25519: vec![],
     };
-    let sig = sk.sign(&signing_bytes_demote_member(&wi)).to_bytes().to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    let sig = sk
+        .sign(&signing_bytes_demote_member(&wi))
+        .to_bytes()
+        .to_vec();
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_read(Json(req): Json<DevSignReadAckRequest>) -> impl IntoResponse {
@@ -1308,7 +1416,14 @@ async fn dev_sign_read(Json(req): Json<DevSignReadAckRequest>) -> impl IntoRespo
         signature_ed25519: vec![],
     };
     let sig = sk.sign(&signing_bytes_ack_read(&wi)).to_bytes().to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_sign_pop(Json(req): Json<DevSignPoPVerifyRequest>) -> impl IntoResponse {
@@ -1325,7 +1440,14 @@ async fn dev_sign_pop(Json(req): Json<DevSignPoPVerifyRequest>) -> impl IntoResp
         .sign(&signing_bytes_verify_personhood(&wi))
         .to_bytes()
         .to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 fn text_to_chunks(text: &str) -> Vec<Vec<u8>> {
@@ -1399,7 +1521,14 @@ async fn dev_sign_blob(Json(req): Json<DevSignBlobRequest>) -> impl IntoResponse
         .sign(&signing_bytes_register_blob(&wi))
         .to_bytes()
         .to_vec();
-    (StatusCode::OK, Json(DevSignResponse { ok: true, signature_ed25519: sig })).into_response()
+    (
+        StatusCode::OK,
+        Json(DevSignResponse {
+            ok: true,
+            signature_ed25519: sig,
+        }),
+    )
+        .into_response()
 }
 
 async fn dev_bootstrap_demo(
@@ -1525,10 +1654,7 @@ async fn dev_bootstrap_demo(
         seq: msg_seq,
         signature_ed25519: vec![],
     };
-    rwi.signature_ed25519 = sk_b
-        .sign(&signing_bytes_ack_read(&rwi))
-        .to_bytes()
-        .to_vec();
+    rwi.signature_ed25519 = sk_b.sign(&signing_bytes_ack_read(&rwi)).to_bytes().to_vec();
     if let Ok(rwr) = refine_work_item(WorkItem::AckRead(rwi)) {
         let _ = apply_work_result(&mut s, rwr, 5);
     }
@@ -1600,7 +1726,11 @@ async fn list_conversations(State(state): State<AppState>) -> impl IntoResponse 
         })
         .collect::<Vec<_>>();
 
-    (StatusCode::OK, Json(ConversationListResponse { ok: true, items })).into_response()
+    (
+        StatusCode::OK,
+        Json(ConversationListResponse { ok: true, items }),
+    )
+        .into_response()
 }
 
 async fn list_members(
@@ -1718,7 +1848,8 @@ async fn message_detail(
 
     let s = state.service.lock().expect("state lock");
     let Some(m) = s.message_meta_by_conv_seq.get(&(conv_id, q.seq)) else {
-        return api_error(StatusCode::NOT_FOUND, "MSG_NOT_FOUND", "message not found").into_response();
+        return api_error(StatusCode::NOT_FOUND, "MSG_NOT_FOUND", "message not found")
+            .into_response();
     };
 
     (
@@ -1755,7 +1886,8 @@ async fn message_status(
 
     let s = state.service.lock().expect("state lock");
     if !s.message_meta_by_conv_seq.contains_key(&(conv_id, q.seq)) {
-        return api_error(StatusCode::NOT_FOUND, "MSG_NOT_FOUND", "message not found").into_response();
+        return api_error(StatusCode::NOT_FOUND, "MSG_NOT_FOUND", "message not found")
+            .into_response();
     }
 
     let mut readers = s
@@ -1935,27 +2067,47 @@ async fn promote_member(
     }
 
     let Some(conv_ro) = s.conversation_by_id.get(&req.conv_id) else {
-        return api_error(StatusCode::NOT_FOUND, "CONV_NOT_FOUND", "conversation not found")
-            .into_response();
+        return api_error(
+            StatusCode::NOT_FOUND,
+            "CONV_NOT_FOUND",
+            "conversation not found",
+        )
+        .into_response();
     };
 
     if conv_ro.conv_type != ConversationType::Group {
-        return api_error(StatusCode::BAD_REQUEST, "CONV_NOT_GROUP", "role change only for groups")
-            .into_response();
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "CONV_NOT_GROUP",
+            "role change only for groups",
+        )
+        .into_response();
     }
 
     let Some(actor_member) = s.member_by_conv_account.get(&(req.conv_id, req.actor)) else {
-        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_MEMBER", "actor not member")
-            .into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "ACTOR_NOT_MEMBER",
+            "actor not member",
+        )
+        .into_response();
     };
     if !actor_member.active || actor_member.role != 1 {
-        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_ADMIN", "actor not admin")
-            .into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "ACTOR_NOT_ADMIN",
+            "actor not admin",
+        )
+        .into_response();
     }
 
     let Some(target_ro) = s.member_by_conv_account.get(&(req.conv_id, req.member)) else {
-        return api_error(StatusCode::BAD_REQUEST, "TARGET_NOT_MEMBER", "target not member")
-            .into_response();
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "TARGET_NOT_MEMBER",
+            "target not member",
+        )
+        .into_response();
     };
     if !target_ro.active {
         return api_error(
@@ -2007,22 +2159,38 @@ async fn demote_member(
     }
 
     if !s.conversation_by_id.contains_key(&req.conv_id) {
-        return api_error(StatusCode::NOT_FOUND, "CONV_NOT_FOUND", "conversation not found")
-            .into_response();
+        return api_error(
+            StatusCode::NOT_FOUND,
+            "CONV_NOT_FOUND",
+            "conversation not found",
+        )
+        .into_response();
     }
 
     let Some(actor_member) = s.member_by_conv_account.get(&(req.conv_id, req.actor)) else {
-        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_MEMBER", "actor not member")
-            .into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "ACTOR_NOT_MEMBER",
+            "actor not member",
+        )
+        .into_response();
     };
     if !actor_member.active || actor_member.role != 1 {
-        return api_error(StatusCode::UNAUTHORIZED, "ACTOR_NOT_ADMIN", "actor not admin")
-            .into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "ACTOR_NOT_ADMIN",
+            "actor not admin",
+        )
+        .into_response();
     }
 
     let Some(target_ro) = s.member_by_conv_account.get(&(req.conv_id, req.member)) else {
-        return api_error(StatusCode::BAD_REQUEST, "TARGET_NOT_MEMBER", "target not member")
-            .into_response();
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "TARGET_NOT_MEMBER",
+            "target not member",
+        )
+        .into_response();
     };
     if !target_ro.active {
         return api_error(
@@ -2187,7 +2355,7 @@ async fn send_message(
                 }),
             )
                 .into_response()
-        },
+        }
         _ => api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL_UNEXPECTED_EVENT",
@@ -2240,10 +2408,7 @@ async fn apply_security_headers<B>(mut res: Response<B>) -> Response<B> {
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert(
-        header::X_FRAME_OPTIONS,
-        HeaderValue::from_static("DENY"),
-    );
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
@@ -2269,6 +2434,31 @@ async fn apply_security_headers<B>(mut res: Response<B>) -> Response<B> {
         ),
     );
 
+    if let Ok(origins_raw) = std::env::var("JAMTALK_ALLOWED_ORIGINS") {
+        if let Some(origin) = origins_raw
+            .split(',')
+            .map(|s| s.trim())
+            .find(|s| !s.is_empty())
+        {
+            if let Ok(v) = HeaderValue::from_str(origin) {
+                headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, v);
+            }
+        }
+    } else {
+        headers.insert(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_static("http://127.0.0.1:8080"),
+        );
+    }
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("content-type,idempotency-key"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET,POST,OPTIONS"),
+    );
+
     res
 }
 
@@ -2280,15 +2470,22 @@ pub fn build_router(state: AppState) -> Router {
         .route("/styles.css", get(ui_css))
         .route("/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/config", get(runtime_config))
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/logout", post(auth_logout))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/auth/verify-wallet", post(auth_verify_wallet))
         .route("/v1/auth/metrics", get(auth_metrics))
-        .route("/v1/ops/rate-limits", get(ops_rate_limits).post(ops_rate_limits_reset))
+        .route(
+            "/v1/ops/rate-limits",
+            get(ops_rate_limits).post(ops_rate_limits_reset),
+        )
         .route("/v1/pop/verify", post(pop_verify))
         .route("/v1/blobs/register", post(register_blob))
-        .route("/v1/conversations", get(list_conversations).post(create_conversation))
+        .route(
+            "/v1/conversations",
+            get(list_conversations).post(create_conversation),
+        )
         .route("/v1/conversations/members", get(list_members))
         .route("/v1/messages", get(list_messages))
         .route("/v1/messages/detail", get(message_detail))
