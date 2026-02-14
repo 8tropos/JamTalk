@@ -37,6 +37,7 @@ Current API endpoints:
 - `POST /v1/auth/verify`
 - `POST /v1/auth/verify-wallet` (EVM personal_sign flow)
 - `GET /v1/auth/metrics`
+- `GET /v1/config` (runtime profile + allowed CORS origins)
 - `GET /v1/ops/rate-limits`
 - `POST /v1/ops/rate-limits` (reset a specific bucket key)
 - `POST /v1/pop/verify`
@@ -62,6 +63,7 @@ Security baseline:
 - `Cross-Origin-Opener-Policy: same-origin`
 - `Cross-Origin-Resource-Policy: same-origin`
 - Auth endpoint rate-limit scaffold (in-memory token bucket; 429 on exceed)
+- CORS allowlist (set via `JAMTALK_ALLOWED_ORIGINS`, profile via `JAMTALK_ENV_PROFILE`)
 
 ## Modules
 

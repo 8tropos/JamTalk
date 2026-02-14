@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
-    extract::{Query, State},
-    http::{header, HeaderMap, HeaderValue, Response, StatusCode},
-    middleware,
-    response::{Html, IntoResponse},
+    extract::{Query, Request, State},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -2402,6 +2402,65 @@ async fn read_ack(
         .into_response()
 }
 
+async fn cors_allowlist_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let origin = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let is_allowed = origin
+        .as_ref()
+        .map(|o| state.runtime_config.allowed_origins.iter().any(|a| a == o))
+        .unwrap_or(false);
+
+    if req.method() == Method::OPTIONS {
+        if is_allowed {
+            let mut res = Response::new(axum::body::Body::empty());
+            *res.status_mut() = StatusCode::NO_CONTENT;
+            let headers = res.headers_mut();
+            headers.insert(
+                header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                HeaderValue::from_str(origin.as_deref().unwrap_or_default())
+                    .unwrap_or_else(|_| HeaderValue::from_static("null")),
+            );
+            headers.insert(
+                header::ACCESS_CONTROL_ALLOW_METHODS,
+                HeaderValue::from_static("GET, POST, OPTIONS"),
+            );
+            headers.insert(
+                header::ACCESS_CONTROL_ALLOW_HEADERS,
+                HeaderValue::from_static("content-type, idempotency-key"),
+            );
+            headers.insert(
+                header::ACCESS_CONTROL_MAX_AGE,
+                HeaderValue::from_static("600"),
+            );
+            headers.insert(header::VARY, HeaderValue::from_static("Origin"));
+            return res;
+        }
+        let mut res = Response::new(axum::body::Body::from("origin not allowed"));
+        *res.status_mut() = StatusCode::FORBIDDEN;
+        return res;
+    }
+
+    let mut res = next.run(req).await;
+    if is_allowed {
+        let headers = res.headers_mut();
+        headers.insert(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_str(origin.as_deref().unwrap_or_default())
+                .unwrap_or_else(|_| HeaderValue::from_static("null")),
+        );
+        headers.insert(header::VARY, HeaderValue::from_static("Origin"));
+    }
+    res
+}
+
 async fn apply_security_headers<B>(mut res: Response<B>) -> Response<B> {
     let headers = res.headers_mut();
     headers.insert(
@@ -2432,31 +2491,6 @@ async fn apply_security_headers<B>(mut res: Response<B>) -> Response<B> {
         HeaderValue::from_static(
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
         ),
-    );
-
-    if let Ok(origins_raw) = std::env::var("JAMTALK_ALLOWED_ORIGINS") {
-        if let Some(origin) = origins_raw
-            .split(',')
-            .map(|s| s.trim())
-            .find(|s| !s.is_empty())
-        {
-            if let Ok(v) = HeaderValue::from_str(origin) {
-                headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, v);
-            }
-        }
-    } else {
-        headers.insert(
-            header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            HeaderValue::from_static("http://127.0.0.1:8080"),
-        );
-    }
-    headers.insert(
-        header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("content-type,idempotency-key"),
-    );
-    headers.insert(
-        header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("GET,POST,OPTIONS"),
     );
 
     res
@@ -2508,6 +2542,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/conversations/demote-member", post(demote_member))
         .route("/v1/messages/send", post(send_message))
         .route("/v1/messages/read", post(read_ack))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            cors_allowlist_middleware,
+        ))
         .layer(middleware::map_response(apply_security_headers))
         .with_state(state)
 }

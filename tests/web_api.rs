@@ -35,6 +35,86 @@ fn evm_address_from_signing_key(sk: &SecpSigningKey) -> String {
 }
 
 #[tokio::test]
+async fn runtime_config_endpoint_returns_profile_and_origins() {
+    let mut app_state = web_api::AppState::new(ServiceState::default());
+    app_state.runtime_config = web_api::RuntimeConfig {
+        profile: "staging".to_string(),
+        allowed_origins: vec![
+            "https://app.example.com".to_string(),
+            "https://staging.example.com".to_string(),
+        ],
+    };
+    let app = web_api::build_router(app_state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/config")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["profile"], "staging");
+    assert!(v["allowed_origins"].to_string().contains("app.example.com"));
+}
+
+#[tokio::test]
+async fn cors_allows_only_allowlisted_origin() {
+    let mut app_state = web_api::AppState::new(ServiceState::default());
+    app_state.runtime_config = web_api::RuntimeConfig {
+        profile: "local".to_string(),
+        allowed_origins: vec!["https://app.example.com".to_string()],
+    };
+    let app = web_api::build_router(app_state);
+
+    let allowed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/health")
+                .header("origin", "https://app.example.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(allowed.status(), 200);
+    assert_eq!(
+        allowed
+            .headers()
+            .get("access-control-allow-origin")
+            .unwrap(),
+        "https://app.example.com"
+    );
+
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/health")
+                .header("origin", "https://evil.example.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 200);
+    assert!(denied
+        .headers()
+        .get("access-control-allow-origin")
+        .is_none());
+}
+
+#[tokio::test]
 async fn security_headers_are_applied() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);
