@@ -11,7 +11,9 @@ use axum::{
 };
 use rand_core::{OsRng, RngCore};
 use ed25519_dalek::{Signer, SigningKey};
+use k256::ecdsa::{RecoveryId, Signature as SecpSignature, VerifyingKey};
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 
 use crate::auth::{
     signing_bytes_ack_read, signing_bytes_create_conversation, signing_bytes_register_blob,
@@ -75,6 +77,19 @@ struct VerifyChallengeRequest {
 
 #[derive(Serialize)]
 struct VerifyChallengeResponse {
+    ok: bool,
+    wallet: String,
+}
+
+#[derive(Deserialize)]
+struct VerifyWalletChallengeRequest {
+    wallet: String,
+    challenge: String,
+    signature_hex: String,
+}
+
+#[derive(Serialize)]
+struct VerifyWalletChallengeResponse {
     ok: bool,
     wallet: String,
 }
@@ -343,6 +358,44 @@ fn random_challenge_hex() -> String {
     hex::encode(buf)
 }
 
+fn evm_personal_sign_hash(message: &str) -> [u8; 32] {
+    let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
+    let mut hasher = Keccak256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update(message.as_bytes());
+    let out = hasher.finalize();
+    out.into()
+}
+
+fn recover_evm_address(message: &str, signature_hex: &str) -> Result<String, ServiceError> {
+    let sig_hex = signature_hex.trim_start_matches("0x");
+    let raw = hex::decode(sig_hex).map_err(|_| ServiceError::BadSignature)?;
+    if raw.len() != 65 {
+        return Err(ServiceError::BadSignature);
+    }
+
+    let v_raw = raw[64];
+    let v = match v_raw {
+        27 | 28 => v_raw - 27,
+        0 | 1 => v_raw,
+        _ => return Err(ServiceError::BadSignature),
+    };
+
+    let recid = RecoveryId::try_from(v).map_err(|_| ServiceError::BadSignature)?;
+    let sig = SecpSignature::try_from(&raw[..64]).map_err(|_| ServiceError::BadSignature)?;
+    let digest = evm_personal_sign_hash(message);
+
+    let vk = VerifyingKey::recover_from_prehash(&digest, &sig, recid)
+        .map_err(|_| ServiceError::BadSignature)?;
+    let pubkey = vk.to_encoded_point(false);
+    let pk = pubkey.as_bytes();
+    let mut hasher = Keccak256::new();
+    hasher.update(&pk[1..]);
+    let out = hasher.finalize();
+    let addr = &out[12..];
+    Ok(format!("0x{}", hex::encode(addr)))
+}
+
 async fn auth_challenge(
     State(state): State<AppState>,
     Json(req): Json<ChallengeRequest>,
@@ -408,6 +461,47 @@ async fn auth_verify(
     (
         StatusCode::OK,
         Json(VerifyChallengeResponse {
+            ok: true,
+            wallet: req.wallet,
+        }),
+    )
+        .into_response()
+}
+
+async fn auth_verify_wallet(
+    State(state): State<AppState>,
+    Json(req): Json<VerifyWalletChallengeRequest>,
+) -> impl IntoResponse {
+    let expected = {
+        let map = state.auth_challenges.lock().expect("challenge lock");
+        map.get(&req.wallet).cloned()
+    };
+
+    let Some(expected_challenge) = expected else {
+        return (StatusCode::UNAUTHORIZED, "no challenge for wallet").into_response();
+    };
+
+    if expected_challenge != req.challenge {
+        return (StatusCode::UNAUTHORIZED, "challenge mismatch").into_response();
+    }
+
+    let recovered = match recover_evm_address(&req.challenge, &req.signature_hex) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::UNAUTHORIZED, "signature verify failed").into_response(),
+    };
+
+    if !recovered.eq_ignore_ascii_case(&req.wallet) {
+        return (StatusCode::UNAUTHORIZED, "wallet mismatch").into_response();
+    }
+
+    {
+        let mut map = state.auth_challenges.lock().expect("challenge lock");
+        map.remove(&req.wallet);
+    }
+
+    (
+        StatusCode::OK,
+        Json(VerifyWalletChallengeResponse {
             ok: true,
             wallet: req.wallet,
         }),
@@ -1031,6 +1125,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/status", get(status))
         .route("/v1/auth/challenge", post(auth_challenge))
         .route("/v1/auth/verify", post(auth_verify))
+        .route("/v1/auth/verify-wallet", post(auth_verify_wallet))
         .route("/v1/pop/verify", post(pop_verify))
         .route("/v1/blobs/register", post(register_blob))
         .route("/v1/conversations", get(list_conversations).post(create_conversation))

@@ -9,7 +9,26 @@ use jam_messenger::{
     CreateConversationWI, DeviceRecord, RegisterDeviceWI, SendMessageWI, ServiceState,
     VerifyPersonhoodWI, WorkItem,
 };
+use k256::ecdsa::SigningKey as SecpSigningKey;
+use sha3::{Digest, Keccak256};
 use tower::util::ServiceExt;
+
+fn evm_personal_sign_hash(message: &str) -> [u8; 32] {
+    let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
+    let mut hasher = Keccak256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update(message.as_bytes());
+    hasher.finalize().into()
+}
+
+fn evm_address_from_signing_key(sk: &SecpSigningKey) -> String {
+    let vk = sk.verifying_key().to_encoded_point(false);
+    let pk = vk.as_bytes();
+    let mut h = Keccak256::new();
+    h.update(&pk[1..]);
+    let out = h.finalize();
+    format!("0x{}", hex::encode(&out[12..]))
+}
 
 #[tokio::test]
 async fn ui_shell_routes_are_served() {
@@ -120,6 +139,63 @@ async fn auth_challenge_and_verify_roundtrip() {
                 .uri("/v1/auth/verify")
                 .header("content-type", "application/json")
                 .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(verify_resp.status(), 200);
+}
+
+#[tokio::test]
+async fn auth_verify_wallet_roundtrip() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let sk = SecpSigningKey::from_slice(&[11u8; 32]).unwrap();
+    let wallet = evm_address_from_signing_key(&sk);
+
+    let challenge_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::json!({"wallet":wallet}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(challenge_resp.status(), 200);
+    let body = axum::body::to_bytes(challenge_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let challenge = v["challenge"].as_str().unwrap().to_string();
+
+    let digest = evm_personal_sign_hash(&challenge);
+    let (sig, recid) = sk.sign_prehash_recoverable(&digest).unwrap();
+    let mut sig_bytes = sig.to_vec();
+    sig_bytes.push(recid.to_byte() + 27);
+    let sig_hex = format!("0x{}", hex::encode(sig_bytes));
+
+    let verify_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify-wallet")
+                .header("content-type", "application/json")
+                .body(
+                    Body::from(
+                        serde_json::json!({
+                            "wallet": wallet,
+                            "challenge": challenge,
+                            "signature_hex": sig_hex,
+                        })
+                        .to_string(),
+                    ),
+                )
                 .unwrap(),
         )
         .await

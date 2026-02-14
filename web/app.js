@@ -70,6 +70,28 @@ q('btn-connect').onclick = () => {
   renderSession();
 };
 
+q('btn-connect-evm').onclick = async () => {
+  if (!window.ethereum) {
+    toast('No injected wallet found', true);
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const wallet = accounts?.[0];
+    if (!wallet) return;
+    q('wallet').value = wallet;
+    const s = readSession();
+    s.wallet = wallet;
+    s.walletType = 'evm';
+    s.connectedAt = new Date().toISOString();
+    writeSession(s);
+    renderSession();
+    toast('EVM wallet connected');
+  } catch (e) {
+    toast('Wallet connect failed', true);
+  }
+};
+
 q('btn-save-session').onclick = () => {
   const s = readSession();
   s.wallet = q('wallet').value.trim();
@@ -176,8 +198,57 @@ q('btn-verify').onclick = async () => {
     s.authVerifiedAt = new Date().toISOString();
     writeSession(s);
     renderSession();
+    toast('Auth verified');
+  } else {
+    toast('Auth verify failed', true);
   }
 };
+
+q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify', async () => {
+  if (!window.ethereum) {
+    toast('No injected wallet found', true);
+    return;
+  }
+  const wallet = q('wallet').value.trim();
+  if (!wallet || !wallet.startsWith('0x')) {
+    toast('Connect an EVM wallet first', true);
+    return;
+  }
+  let challenge = q('challenge').value.trim();
+  if (!challenge) {
+    const c = await callJson('/v1/auth/challenge', 'POST', { wallet });
+    if (!c.ok) {
+      q('out-verify').textContent = JSON.stringify(c, null, 2);
+      toast('Challenge request failed', true);
+      return;
+    }
+    challenge = c.body.challenge;
+    q('challenge').value = challenge;
+  }
+
+  const sigHex = await window.ethereum.request({
+    method: 'personal_sign',
+    params: [challenge, wallet],
+  });
+
+  const res = await callJson('/v1/auth/verify-wallet', 'POST', {
+    wallet,
+    challenge,
+    signature_hex: sigHex,
+  });
+  q('out-verify').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    const s = readSession();
+    s.authVerified = true;
+    s.authVerifiedAt = new Date().toISOString();
+    s.walletType = 'evm';
+    writeSession(s);
+    renderSession();
+    toast('EVM auth verified');
+  } else {
+    toast('EVM verify failed', true);
+  }
+});
 
 q('btn-pop').onclick = async () => {
   q('out-pop').textContent = '...';

@@ -22,8 +22,12 @@
       <section class="card">
         <h2>Wallet Session (browser-first)</h2>
         <div class="row">
-          <input id="wallet" placeholder="wallet-1" />
+          <input id="wallet" placeholder="wallet-1 / 0x..." />
           <button id="btn-connect">Connect wallet</button>
+        </div>
+        <div class="row">
+          <button id="btn-connect-evm">Connect injected EVM wallet</button>
+          <button id="btn-evm-sign-verify">EVM sign + verify challenge</button>
         </div>
         <div class="row">
           <button id="btn-save-session">Save local session</button>

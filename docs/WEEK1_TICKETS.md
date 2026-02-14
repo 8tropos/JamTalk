@@ -95,6 +95,11 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Add one-tap send+refresh pipeline
 - Status: ✅ implemented
 
+### JT-017 (P0) — Injected EVM wallet adapter auth bridge
+- Add browser wallet connect for injected EVM providers
+- Add challenge sign via `personal_sign` and server-side EVM verification endpoint
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.

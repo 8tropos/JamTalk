@@ -34,6 +34,7 @@ Then open:
 Current API endpoints:
 - `POST /v1/auth/challenge`
 - `POST /v1/auth/verify`
+- `POST /v1/auth/verify-wallet` (EVM personal_sign flow)
 - `POST /v1/pop/verify`
 - `POST /v1/blobs/register`
 - `GET /v1/conversations`
