@@ -29,7 +29,9 @@ Harden auth/session safety and move from dev-only UX toward production-safe brow
 
 ### JT-021 (P0) — Message detail endpoint + timeline enrichment
 - Expose fuller message metadata for richer chat rendering
-- Status: ⏳ planned
+- Add `GET /v1/messages/detail?conv_id=...&seq=...`
+- Enrich timeline cards with msg id, slot, and chunk count
+- Status: ✅ implemented
 
 ### JT-022 (P1) — Conversation participant management endpoint
 - Add add/remove participant flow with auth checks

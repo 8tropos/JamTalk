@@ -214,8 +214,11 @@ struct MessagesQuery {
 #[derive(Serialize)]
 struct MessageListItem {
     seq: u64,
+    msg_id: [u8; 32],
     sender: [u8; 32],
+    slot: u64,
     cipher_len: u32,
+    chunk_count: u32,
     flags: u16,
 }
 
@@ -224,6 +227,28 @@ struct MessageListResponse {
     ok: bool,
     conv_id: [u8; 32],
     items: Vec<MessageListItem>,
+}
+
+#[derive(Deserialize)]
+struct MessageDetailQuery {
+    conv_id: String,
+    seq: u64,
+}
+
+#[derive(Serialize)]
+struct MessageDetailResponse {
+    ok: bool,
+    conv_id: [u8; 32],
+    seq: u64,
+    msg_id: [u8; 32],
+    sender: [u8; 32],
+    slot: u64,
+    cipher_root: [u8; 32],
+    cipher_len: u32,
+    chunk_count: u32,
+    envelope_root: [u8; 32],
+    flags: u16,
+    replaces_seq: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -1130,8 +1155,11 @@ async fn list_messages(
         .filter(|((cid, _), _)| *cid == conv_id)
         .map(|((_cid, seq), m)| MessageListItem {
             seq: *seq,
+            msg_id: m.msg_id,
             sender: m.sender,
+            slot: m.slot,
             cipher_len: m.cipher_len,
+            chunk_count: m.chunk_count,
             flags: m.flags,
         })
         .collect::<Vec<_>>();
@@ -1143,6 +1171,43 @@ async fn list_messages(
             ok: true,
             conv_id,
             items,
+        }),
+    )
+        .into_response()
+}
+
+async fn message_detail(
+    State(state): State<AppState>,
+    Query(q): Query<MessageDetailQuery>,
+) -> impl IntoResponse {
+    let conv_id = match parse_u8_32_json(&q.conv_id) {
+        Ok(v) => v,
+        Err(e) => {
+            let (status, msg) = error_to_http(e);
+            return (status, msg).into_response();
+        }
+    };
+
+    let s = state.service.lock().expect("state lock");
+    let Some(m) = s.message_meta_by_conv_seq.get(&(conv_id, q.seq)) else {
+        return api_error(StatusCode::NOT_FOUND, "MSG_NOT_FOUND", "message not found").into_response();
+    };
+
+    (
+        StatusCode::OK,
+        Json(MessageDetailResponse {
+            ok: true,
+            conv_id,
+            seq: q.seq,
+            msg_id: m.msg_id,
+            sender: m.sender,
+            slot: m.slot,
+            cipher_root: m.cipher_root,
+            cipher_len: m.cipher_len,
+            chunk_count: m.chunk_count,
+            envelope_root: m.envelope_root,
+            flags: m.flags,
+            replaces_seq: m.replaces_seq,
         }),
     )
         .into_response()
@@ -1305,6 +1370,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/blobs/register", post(register_blob))
         .route("/v1/conversations", get(list_conversations).post(create_conversation))
         .route("/v1/messages", get(list_messages))
+        .route("/v1/messages/detail", get(message_detail))
         .route("/v1/dev/register-device", post(dev_register_device))
         .route("/v1/dev/sign/challenge", post(dev_sign_challenge))
         .route("/v1/dev/sign/conversation", post(dev_sign_conversation))

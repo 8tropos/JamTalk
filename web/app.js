@@ -157,6 +157,11 @@ function shortAccount(a){
   return `${a.slice(0,4).join(',')}...`;
 }
 
+function shortHexBytes(a){
+  if(!Array.isArray(a)) return 'n/a';
+  return a.slice(0,6).map(v => Number(v).toString(16).padStart(2, '0')).join('') + '...';
+}
+
 function renderTimeline(msgRes){
   const box = q('timeline');
   if (!box) return;
@@ -167,9 +172,9 @@ function renderTimeline(msgRes){
   }
   box.innerHTML = items.map(m => `
     <div class="msg-card">
-      <div><strong>seq #${m.seq}</strong></div>
-      <div class="msg-meta">sender: ${shortAccount(m.sender)}</div>
-      <div class="msg-meta">cipher_len: ${m.cipher_len} | flags: ${m.flags}</div>
+      <div><strong>seq #${m.seq}</strong> · slot ${m.slot ?? '-'}</div>
+      <div class="msg-meta">sender: ${shortAccount(m.sender)} · msg_id: ${shortHexBytes(m.msg_id)}</div>
+      <div class="msg-meta">cipher_len: ${m.cipher_len} · chunks: ${m.chunk_count} · flags: ${m.flags}</div>
     </div>
   `).join('');
   if (q('timeline-autoscroll')?.checked) {
@@ -195,6 +200,14 @@ q('btn-list-messages').onclick = async () => {
 
 q('btn-render-timeline').onclick = async () => {
   await refreshLists();
+};
+
+q('btn-message-detail').onclick = async () => {
+  const conv = encodeURIComponent(q('conv-id').value.trim());
+  const seq = Number(q('detail-seq').value || '1');
+  const res = await callJson(`/v1/messages/detail?conv_id=${conv}&seq=${seq}`);
+  q('out-message-detail').textContent = JSON.stringify(res, null, 2);
+  if (!res.ok) toast(apiErrorText(res, 'Message detail failed'), true);
 };
 
 q('btn-challenge').onclick = async () => {

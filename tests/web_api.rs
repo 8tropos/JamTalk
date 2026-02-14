@@ -484,6 +484,31 @@ async fn list_endpoints_return_data() {
 }
 
 #[tokio::test]
+async fn message_detail_endpoint_not_found_returns_structured_error() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/messages/detail?conv_id=%5B9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9%5D&seq=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["error"]["code"], "MSG_NOT_FOUND");
+}
+
+#[tokio::test]
 async fn conversations_send_and_read_endpoints_happy_path() {
     let mut state = ServiceState::default();
     let a1 = [1u8; 32];
