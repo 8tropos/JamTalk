@@ -148,6 +148,105 @@ async fn auth_challenge_and_verify_roundtrip() {
 }
 
 #[tokio::test]
+async fn auth_challenge_replay_is_rejected() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let challenge_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"wallet-replay"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = axum::body::to_bytes(challenge_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let challenge = v["challenge"].as_str().unwrap().to_string();
+
+    let sk = SigningKey::from_bytes(&[12u8; 32]);
+    let sig = sk.sign(challenge.as_bytes()).to_bytes().to_vec();
+    let verify_payload = serde_json::json!({
+        "wallet":"wallet-replay",
+        "challenge": challenge,
+        "signature_ed25519": sig,
+        "sig_pubkey_ed25519": sk.verifying_key().to_bytes(),
+    });
+
+    let verify_once = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify")
+                .header("content-type", "application/json")
+                .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(verify_once.status(), 200);
+
+    let verify_twice = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify")
+                .header("content-type", "application/json")
+                .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(verify_twice.status(), 401);
+}
+
+#[tokio::test]
+async fn auth_challenge_expired_is_rejected() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    {
+        let mut map = app_state.auth_challenges.lock().unwrap();
+        map.insert(
+            "wallet-expired".to_string(),
+            web_api::AuthChallengeEntry {
+                challenge: "deadbeef".to_string(),
+                expires_at_unix_s: 1,
+            },
+        );
+    }
+    let app = web_api::build_router(app_state);
+
+    let sk = SigningKey::from_bytes(&[33u8; 32]);
+    let sig = sk.sign(b"deadbeef").to_bytes().to_vec();
+    let verify_payload = serde_json::json!({
+        "wallet":"wallet-expired",
+        "challenge":"deadbeef",
+        "signature_ed25519": sig,
+        "sig_pubkey_ed25519": sk.verifying_key().to_bytes(),
+    });
+
+    let verify_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify")
+                .header("content-type", "application/json")
+                .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(verify_resp.status(), 401);
+}
+
+#[tokio::test]
 async fn auth_verify_wallet_roundtrip() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

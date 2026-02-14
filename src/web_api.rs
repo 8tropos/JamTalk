@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Query, State},
@@ -29,7 +30,14 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub service: Arc<Mutex<ServiceState>>,
-    pub auth_challenges: Arc<Mutex<BTreeMap<String, String>>>,
+    pub auth_challenges: Arc<Mutex<BTreeMap<String, AuthChallengeEntry>>>,
+    pub auth_consumed_challenges: Arc<Mutex<BTreeSet<String>>>,
+}
+
+#[derive(Clone)]
+pub struct AuthChallengeEntry {
+    pub challenge: String,
+    pub expires_at_unix_s: u64,
 }
 
 impl AppState {
@@ -37,9 +45,12 @@ impl AppState {
         Self {
             service: Arc::new(Mutex::new(service)),
             auth_challenges: Arc::new(Mutex::new(BTreeMap::new())),
+            auth_consumed_challenges: Arc::new(Mutex::new(BTreeSet::new())),
         }
     }
 }
+
+const AUTH_CHALLENGE_TTL_S: u64 = 300;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -358,6 +369,13 @@ fn random_challenge_hex() -> String {
     hex::encode(buf)
 }
 
+fn now_unix_s() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 fn evm_personal_sign_hash(message: &str) -> [u8; 32] {
     let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
     let mut hasher = Keccak256::new();
@@ -405,8 +423,18 @@ async fn auth_challenge(
     }
 
     let challenge = random_challenge_hex();
+    let now = now_unix_s();
+    let expires_at = now.saturating_add(AUTH_CHALLENGE_TTL_S);
+
     let mut map = state.auth_challenges.lock().expect("challenge lock");
-    map.insert(req.wallet.clone(), challenge.clone());
+    map.retain(|_, v| v.expires_at_unix_s > now);
+    map.insert(
+        req.wallet.clone(),
+        AuthChallengeEntry {
+            challenge: challenge.clone(),
+            expires_at_unix_s: expires_at,
+        },
+    );
 
     (
         StatusCode::OK,
@@ -427,12 +455,27 @@ async fn auth_verify(
         map.get(&req.wallet).cloned()
     };
 
-    let Some(expected_challenge) = expected else {
+    let Some(expected_entry) = expected else {
         return (StatusCode::UNAUTHORIZED, "no challenge for wallet").into_response();
     };
 
-    if expected_challenge != req.challenge {
+    let now = now_unix_s();
+    if expected_entry.expires_at_unix_s <= now {
+        return (StatusCode::UNAUTHORIZED, "challenge expired").into_response();
+    }
+
+    if expected_entry.challenge != req.challenge {
         return (StatusCode::UNAUTHORIZED, "challenge mismatch").into_response();
+    }
+
+    {
+        let consumed = state
+            .auth_consumed_challenges
+            .lock()
+            .expect("consumed lock");
+        if consumed.contains(&req.challenge) {
+            return (StatusCode::UNAUTHORIZED, "challenge replay detected").into_response();
+        }
     }
 
     let ok = {
@@ -457,6 +500,13 @@ async fn auth_verify(
         let mut map = state.auth_challenges.lock().expect("challenge lock");
         map.remove(&req.wallet);
     }
+    {
+        let mut consumed = state
+            .auth_consumed_challenges
+            .lock()
+            .expect("consumed lock");
+        consumed.insert(req.challenge.clone());
+    }
 
     (
         StatusCode::OK,
@@ -477,12 +527,27 @@ async fn auth_verify_wallet(
         map.get(&req.wallet).cloned()
     };
 
-    let Some(expected_challenge) = expected else {
+    let Some(expected_entry) = expected else {
         return (StatusCode::UNAUTHORIZED, "no challenge for wallet").into_response();
     };
 
-    if expected_challenge != req.challenge {
+    let now = now_unix_s();
+    if expected_entry.expires_at_unix_s <= now {
+        return (StatusCode::UNAUTHORIZED, "challenge expired").into_response();
+    }
+
+    if expected_entry.challenge != req.challenge {
         return (StatusCode::UNAUTHORIZED, "challenge mismatch").into_response();
+    }
+
+    {
+        let consumed = state
+            .auth_consumed_challenges
+            .lock()
+            .expect("consumed lock");
+        if consumed.contains(&req.challenge) {
+            return (StatusCode::UNAUTHORIZED, "challenge replay detected").into_response();
+        }
     }
 
     let recovered = match recover_evm_address(&req.challenge, &req.signature_hex) {
@@ -497,6 +562,13 @@ async fn auth_verify_wallet(
     {
         let mut map = state.auth_challenges.lock().expect("challenge lock");
         map.remove(&req.wallet);
+    }
+    {
+        let mut consumed = state
+            .auth_consumed_challenges
+            .lock()
+            .expect("consumed lock");
+        consumed.insert(req.challenge.clone());
     }
 
     (
