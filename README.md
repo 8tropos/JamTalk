@@ -1,4 +1,4 @@
-# JAM Messenger (Spec v0.2 skeleton)
+# JamTalk (Spec v0.2 skeleton)
 
 This repository is a rigorous, implementation-oriented scaffold for an **on-chain messenger on JAM**.
 

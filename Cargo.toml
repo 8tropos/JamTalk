@@ -3,7 +3,7 @@ name = "jam-messenger"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "On-chain messenger service skeleton for JAM"
+description = "JamTalk: on-chain messenger service skeleton for JAM"
 
 [features]
 default = []
