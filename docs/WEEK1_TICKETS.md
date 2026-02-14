@@ -38,6 +38,12 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Acceptance: happy-path state transitions with integration tests
 - Status: ✅ implemented
 
+### JT-007 (P0) — Responsive browser UI shell (mobile-first)
+- Add static web shell served by API runtime (`/`, `/app.js`, `/styles.css`)
+- Include developer forms for auth + PoP + status interactions
+- Acceptance: UI routes served, smoke route tests present
+- Status: ✅ implemented (initial shell)
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JamTalk MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>JamTalk</h1>
+        <p class="muted">Browser-first MVP shell (mobile-friendly)</p>
+      </header>
+
+      <section class="card">
+        <h2>Health</h2>
+        <button id="btn-health">Check API health</button>
+        <pre id="out-health"></pre>
+      </section>
+
+      <section class="card grid-2">
+        <div>
+          <h2>Auth: Challenge</h2>
+          <label>Wallet<label>
+          <input id="wallet" placeholder="wallet-1" />
+          <button id="btn-challenge">Request challenge</button>
+          <pre id="out-challenge"></pre>
+        </div>
+        <div>
+          <h2>Auth: Verify</h2>
+          <label>Challenge</label>
+          <input id="challenge" placeholder="paste challenge" />
+          <label>Pubkey [u8;32] JSON</label>
+          <textarea id="pubkey" rows="2">[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]</textarea>
+          <label>Signature bytes JSON</label>
+          <textarea id="sig" rows="2">[]</textarea>
+          <button id="btn-verify">Verify challenge</button>
+          <pre id="out-verify"></pre>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>PoP Verify</h2>
+        <div class="row">
+          <input id="pop-account" placeholder="account [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
+          <input id="pop-provider" placeholder="provider" value="test-provider" />
+        </div>
+        <div class="row">
+          <input id="pop-nullifier" placeholder="nullifier [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+          <input id="pop-expiry" placeholder="expires_at_slot" value="1000" />
+        </div>
+        <label>Proof blob JSON bytes</label>
+        <textarea id="pop-proof" rows="2">[1,2,3]</textarea>
+        <label>Signature bytes JSON</label>
+        <textarea id="pop-sig" rows="2">[]</textarea>
+        <button id="btn-pop">Verify PoP</button>
+        <pre id="out-pop"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Conversation + Send + Read</h2>
+        <p class="muted">Developer shell for JT-006 endpoints</p>
+        <button id="btn-status">Get status</button>
+        <pre id="out-status"></pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

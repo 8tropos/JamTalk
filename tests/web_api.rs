@@ -12,6 +12,32 @@ use jam_messenger::{
 use tower::util::ServiceExt;
 
 #[tokio::test]
+async fn ui_shell_routes_are_served() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let root = app
+        .clone()
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(root.status(), 200);
+
+    let js = app
+        .clone()
+        .oneshot(Request::builder().uri("/app.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(js.status(), 200);
+
+    let css = app
+        .oneshot(Request::builder().uri("/styles.css").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(css.status(), 200);
+}
+
+#[tokio::test]
 async fn auth_challenge_and_verify_roundtrip() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

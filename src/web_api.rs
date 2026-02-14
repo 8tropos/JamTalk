@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use axum::{
     extract::State,
     http::StatusCode,
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
 };
@@ -148,12 +148,31 @@ struct ReadAckResponse {
     seq: u64,
 }
 
+const UI_HTML: &str = include_str!("../web/index.html");
+const UI_CSS: &str = include_str!("../web/styles.css");
+const UI_JS: &str = include_str!("../web/app.js");
+
 async fn health() -> impl IntoResponse {
     Json(HealthResponse {
         ok: true,
         product: "JamTalk",
         phase: "MVP / Phase 2.4",
     })
+}
+
+async fn ui_index() -> impl IntoResponse {
+    Html(UI_HTML)
+}
+
+async fn ui_css() -> impl IntoResponse {
+    ([("content-type", "text/css; charset=utf-8")], UI_CSS)
+}
+
+async fn ui_js() -> impl IntoResponse {
+    (
+        [("content-type", "application/javascript; charset=utf-8")],
+        UI_JS,
+    )
 }
 
 async fn status(State(state): State<AppState>) -> impl IntoResponse {
@@ -442,6 +461,10 @@ async fn read_ack(
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(ui_index))
+        .route("/app", get(ui_index))
+        .route("/app.js", get(ui_js))
+        .route("/styles.css", get(ui_css))
         .route("/health", get(health))
         .route("/v1/status", get(status))
         .route("/v1/auth/challenge", post(auth_challenge))
