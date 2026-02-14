@@ -50,6 +50,11 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Preserve challenge/signature/pubkey drafts across refresh
 - Status: ✅ implemented
 
+### JT-009 (P0) — Browser UI workflow for conversation/send/read
+- Add concrete form flow in web shell for create conversation, send message, and read ack endpoints
+- Acceptance: manual browser interaction can hit JT-006 APIs end-to-end
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.

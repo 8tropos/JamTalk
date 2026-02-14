@@ -116,4 +116,48 @@ q('btn-pop').onclick = async () => {
   q('out-pop').textContent = JSON.stringify(await callJson('/v1/pop/verify', 'POST', payload), null, 2);
 };
 
+q('btn-conv-create').onclick = async () => {
+  q('out-conv').textContent = '...';
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    conv_type: q('conv-type').value.trim(),
+    creator: JSON.parse(q('conv-creator').value),
+    initial_participants: JSON.parse(q('conv-participants').value),
+    signature_ed25519: JSON.parse(q('conv-sig').value),
+    current_slot: 20,
+  };
+  q('out-conv').textContent = JSON.stringify(await callJson('/v1/conversations', 'POST', payload), null, 2);
+};
+
+q('btn-msg-send').onclick = async () => {
+  q('out-send').textContent = '...';
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    sender: JSON.parse(q('msg-sender').value),
+    sender_nonce: Number(q('msg-nonce').value),
+    cipher_root: JSON.parse(q('msg-cipher-root').value),
+    cipher_len: Number(q('msg-cipher-len').value),
+    chunk_count: Number(q('msg-chunk-count').value),
+    envelope_root: JSON.parse(q('msg-envelope-root').value),
+    recipients_hint_count: Number(q('msg-recipients-hint').value),
+    fee_limit: Number(q('msg-fee-limit').value),
+    bond_limit: Number(q('msg-bond-limit').value),
+    signature_ed25519: JSON.parse(q('msg-sig').value),
+    current_slot: 21,
+  };
+  q('out-send').textContent = JSON.stringify(await callJson('/v1/messages/send', 'POST', payload), null, 2);
+};
+
+q('btn-read-ack').onclick = async () => {
+  q('out-read').textContent = '...';
+  const payload = {
+    conv_id: JSON.parse(q('conv-id').value),
+    reader: JSON.parse(q('read-reader').value),
+    seq: Number(q('read-seq').value),
+    signature_ed25519: JSON.parse(q('read-sig').value),
+    current_slot: 22,
+  };
+  q('out-read').textContent = JSON.stringify(await callJson('/v1/messages/read', 'POST', payload), null, 2);
+};
+
 renderSession();

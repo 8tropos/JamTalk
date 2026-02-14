@@ -71,8 +71,56 @@
       </section>
 
       <section class="card">
-        <h2>Conversation + Send + Read</h2>
-        <p class="muted">Developer shell for JT-006 endpoints</p>
+        <h2>Conversation + Send + Read (JT-009 UI flow)</h2>
+        <p class="muted">Browser form flow for `/v1/conversations`, `/v1/messages/send`, `/v1/messages/read`</p>
+
+        <h3>Create conversation</h3>
+        <div class="row">
+          <input id="conv-id" placeholder="conv_id [u8;32] JSON" value="[9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9]" />
+          <input id="conv-type" placeholder="dm|group" value="dm" />
+        </div>
+        <div class="row">
+          <input id="conv-creator" placeholder="creator [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+          <input id="conv-participants" placeholder="participants JSON array" value="[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]]" />
+        </div>
+        <label>conversation signature bytes JSON</label>
+        <textarea id="conv-sig" rows="2">[]</textarea>
+        <button id="btn-conv-create">Create conversation</button>
+        <pre id="out-conv"></pre>
+
+        <h3>Send message</h3>
+        <div class="row">
+          <input id="msg-sender" placeholder="sender [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+          <input id="msg-nonce" placeholder="sender_nonce" value="1" />
+        </div>
+        <div class="row">
+          <input id="msg-cipher-root" placeholder="cipher_root [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
+          <input id="msg-envelope-root" placeholder="envelope_root [u8;32] JSON" value="[8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]" />
+        </div>
+        <div class="row">
+          <input id="msg-cipher-len" placeholder="cipher_len" value="5" />
+          <input id="msg-chunk-count" placeholder="chunk_count" value="1" />
+        </div>
+        <div class="row">
+          <input id="msg-recipients-hint" placeholder="recipients_hint_count" value="1" />
+          <input id="msg-fee-limit" placeholder="fee_limit" value="1000000" />
+        </div>
+        <input id="msg-bond-limit" placeholder="bond_limit" value="1000000" />
+        <label>message signature bytes JSON</label>
+        <textarea id="msg-sig" rows="2">[]</textarea>
+        <button id="btn-msg-send">Send message</button>
+        <pre id="out-send"></pre>
+
+        <h3>Read ack</h3>
+        <div class="row">
+          <input id="read-reader" placeholder="reader [u8;32] JSON" value="[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]" />
+          <input id="read-seq" placeholder="seq" value="1" />
+        </div>
+        <label>read ack signature bytes JSON</label>
+        <textarea id="read-sig" rows="2">[]</textarea>
+        <button id="btn-read-ack">Ack read</button>
+        <pre id="out-read"></pre>
+
         <button id="btn-status">Get status</button>
         <pre id="out-status"></pre>
       </section>
