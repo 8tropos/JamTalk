@@ -19,11 +19,22 @@
         <pre id="out-health"></pre>
       </section>
 
+      <section class="card">
+        <h2>Wallet Session (browser-first)</h2>
+        <div class="row">
+          <input id="wallet" placeholder="wallet-1" />
+          <button id="btn-connect">Connect wallet</button>
+        </div>
+        <div class="row">
+          <button id="btn-save-session">Save local session</button>
+          <button id="btn-clear-session">Clear local session</button>
+        </div>
+        <pre id="out-session"></pre>
+      </section>
+
       <section class="card grid-2">
         <div>
           <h2>Auth: Challenge</h2>
-          <label>Wallet<label>
-          <input id="wallet" placeholder="wallet-1" />
           <button id="btn-challenge">Request challenge</button>
           <pre id="out-challenge"></pre>
         </div>
@@ -35,6 +46,7 @@
           <textarea id="pubkey" rows="2">[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]</textarea>
           <label>Signature bytes JSON</label>
           <textarea id="sig" rows="2">[]</textarea>
+          <p class="muted">Tip: for now this UI stores session state locally and supports manual signature input.</p>
           <button id="btn-verify">Verify challenge</button>
           <pre id="out-verify"></pre>
         </div>

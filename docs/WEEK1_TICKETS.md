@@ -44,6 +44,12 @@ Deliver a browser-first MVP skeleton with API + project planning foundations.
 - Acceptance: UI routes served, smoke route tests present
 - Status: ✅ implemented (initial shell)
 
+### JT-008 (P0) — Wallet-connect style browser session flow
+- Add local browser session persistence (`localStorage`) for wallet/auth state
+- Add connect/save/clear session controls in UI
+- Preserve challenge/signature/pubkey drafts across refresh
+- Status: ✅ implemented
+
 ## Notes
 - Browser-first + mobile-friendly remains default product direction.
 - Current phase remains **MVP / Phase 2.4+** with strong PoP backend foundations.
