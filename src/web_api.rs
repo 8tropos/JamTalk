@@ -38,6 +38,7 @@ pub struct AppState {
     pub auth_metrics: Arc<Mutex<AuthMetrics>>,
     pub auth_rate_buckets: Arc<Mutex<BTreeMap<String, RateBucket>>>,
     pub send_idempotency: Arc<Mutex<BTreeMap<String, SendIdempotencyEntry>>>,
+    pub analytics_funnel: Arc<Mutex<FunnelMetrics>>,
     pub runtime_config: RuntimeConfig,
 }
 
@@ -70,6 +71,15 @@ pub struct AuthMetrics {
     pub failed: u64,
 }
 
+#[derive(Clone, Default, Serialize)]
+pub struct FunnelMetrics {
+    pub auth_challenge_issued: u64,
+    pub auth_verified: u64,
+    pub conversation_created: u64,
+    pub message_sent: u64,
+    pub read_acknowledged: u64,
+}
+
 #[derive(Clone)]
 pub struct AuthChallengeEntry {
     pub challenge: String,
@@ -97,6 +107,7 @@ impl AppState {
             auth_metrics: Arc::new(Mutex::new(AuthMetrics::default())),
             auth_rate_buckets: Arc::new(Mutex::new(BTreeMap::new())),
             send_idempotency: Arc::new(Mutex::new(BTreeMap::new())),
+            analytics_funnel: Arc::new(Mutex::new(FunnelMetrics::default())),
             runtime_config: RuntimeConfig {
                 profile,
                 allowed_origins,
@@ -148,6 +159,12 @@ struct RuntimeConfigResponse {
 struct AuthMetricsResponse {
     ok: bool,
     metrics: AuthMetrics,
+}
+
+#[derive(Serialize)]
+struct FunnelMetricsResponse {
+    ok: bool,
+    metrics: FunnelMetrics,
 }
 
 #[derive(Serialize)]
@@ -659,6 +676,14 @@ async fn auth_metrics(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+async fn analytics_funnel(State(state): State<AppState>) -> impl IntoResponse {
+    let m = state.analytics_funnel.lock().expect("funnel lock").clone();
+    Json(FunnelMetricsResponse {
+        ok: true,
+        metrics: m,
+    })
+}
+
 async fn ops_rate_limits(State(state): State<AppState>) -> impl IntoResponse {
     let mut buckets = state
         .auth_rate_buckets
@@ -965,6 +990,10 @@ async fn auth_challenge(
         let mut metrics = state.auth_metrics.lock().expect("metrics lock");
         metrics.issued += 1;
     }
+    {
+        let mut funnel = state.analytics_funnel.lock().expect("funnel lock");
+        funnel.auth_challenge_issued += 1;
+    }
 
     (
         StatusCode::OK,
@@ -1104,6 +1133,10 @@ async fn auth_verify(
         let mut metrics = state.auth_metrics.lock().expect("metrics lock");
         metrics.verified += 1;
     }
+    {
+        let mut funnel = state.analytics_funnel.lock().expect("funnel lock");
+        funnel.auth_verified += 1;
+    }
 
     (
         StatusCode::OK,
@@ -1230,6 +1263,10 @@ async fn auth_verify_wallet(
     {
         let mut metrics = state.auth_metrics.lock().expect("metrics lock");
         metrics.verified += 1;
+    }
+    {
+        let mut funnel = state.analytics_funnel.lock().expect("funnel lock");
+        funnel.auth_verified += 1;
     }
 
     (
@@ -2100,6 +2137,11 @@ async fn create_conversation(
         return (status, msg).into_response();
     }
 
+    {
+        let mut funnel = state.analytics_funnel.lock().expect("funnel lock");
+        funnel.conversation_created += 1;
+    }
+
     (
         StatusCode::OK,
         Json(CreateConversationResponse {
@@ -2482,6 +2524,11 @@ async fn send_message(
                     );
             }
 
+            {
+                let mut funnel = state.analytics_funnel.lock().expect("funnel lock");
+                funnel.message_sent += 1;
+            }
+
             (
                 StatusCode::OK,
                 Json(SendMessageResponse {
@@ -2527,6 +2574,11 @@ async fn read_ack(
     if let Err(e) = apply_work_result(&mut s, wr, slot) {
         let (status, msg) = error_to_http(e);
         return (status, msg).into_response();
+    }
+
+    {
+        let mut funnel = state.analytics_funnel.lock().expect("funnel lock");
+        funnel.read_acknowledged += 1;
     }
 
     (
@@ -2651,6 +2703,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/auth/verify-wallet", post(auth_verify_wallet))
         .route("/v1/auth/metrics", get(auth_metrics))
+        .route("/v1/analytics/funnel", get(analytics_funnel))
         .route(
             "/v1/ops/rate-limits",
             get(ops_rate_limits).post(ops_rate_limits_reset),

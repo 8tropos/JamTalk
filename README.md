@@ -42,6 +42,7 @@ Current API endpoints:
 - `POST /v1/auth/verify`
 - `POST /v1/auth/verify-wallet` (EVM personal_sign flow)
 - `GET /v1/auth/metrics`
+- `GET /v1/analytics/funnel`
 - `GET /v1/config` (runtime profile + allowed CORS origins)
 - `GET /v1/ops/rate-limits`
 - `POST /v1/ops/rate-limits` (reset a specific bucket key)

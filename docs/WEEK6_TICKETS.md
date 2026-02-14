@@ -18,4 +18,4 @@ Public-beta readiness: onboarding/disclosures and lightweight product analytics.
 ### JT-041 (P1) — Funnel analytics counters endpoint
 - Add in-memory counters for auth/session, conversation, and messaging funnel events
 - Expose `GET /v1/analytics/funnel`
-- Status: ⏳ planned
+- Status: ✅ implemented
