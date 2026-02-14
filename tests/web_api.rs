@@ -100,6 +100,59 @@ async fn dev_bootstrap_demo_endpoint_works() {
 }
 
 #[tokio::test]
+async fn auth_logout_clears_wallet_challenge() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let challenge_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"wallet-logout"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(challenge_resp.status(), 200);
+
+    let logout_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/logout")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"wallet-logout"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(logout_resp.status(), 200);
+
+    let verify_payload = serde_json::json!({
+        "wallet":"wallet-logout",
+        "challenge":"any",
+        "signature_ed25519": [1,2,3],
+        "sig_pubkey_ed25519": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    });
+    let verify_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify")
+                .header("content-type", "application/json")
+                .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(verify_resp.status(), 401);
+}
+
+#[tokio::test]
 async fn auth_metrics_endpoint_counts_issue_and_verify() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

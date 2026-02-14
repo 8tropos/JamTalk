@@ -102,6 +102,18 @@ struct ChallengeRequest {
     wallet: String,
 }
 
+#[derive(Deserialize)]
+struct LogoutRequest {
+    wallet: String,
+}
+
+#[derive(Serialize)]
+struct LogoutResponse {
+    ok: bool,
+    wallet: String,
+    cleared_challenge: bool,
+}
+
 #[derive(Serialize)]
 struct ChallengeResponse {
     wallet: String,
@@ -513,6 +525,40 @@ fn recover_evm_address(message: &str, signature_hex: &str) -> Result<String, Ser
     let out = hasher.finalize();
     let addr = &out[12..];
     Ok(format!("0x{}", hex::encode(addr)))
+}
+
+async fn auth_logout(
+    State(state): State<AppState>,
+    Json(req): Json<LogoutRequest>,
+) -> impl IntoResponse {
+    if req.wallet.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "AUTH_WALLET_REQUIRED", "wallet required")
+            .into_response();
+    }
+
+    let removed_entry = {
+        let mut map = state.auth_challenges.lock().expect("challenge lock");
+        map.remove(&req.wallet)
+    };
+    let cleared = removed_entry.is_some();
+
+    if let Some(entry) = removed_entry {
+        let mut consumed = state
+            .auth_consumed_challenges
+            .lock()
+            .expect("consumed lock");
+        consumed.remove(&entry.challenge);
+    }
+
+    (
+        StatusCode::OK,
+        Json(LogoutResponse {
+            ok: true,
+            wallet: req.wallet,
+            cleared_challenge: cleared,
+        }),
+    )
+        .into_response()
 }
 
 async fn auth_challenge(
@@ -1572,6 +1618,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/status", get(status))
         .route("/v1/auth/challenge", post(auth_challenge))
+        .route("/v1/auth/logout", post(auth_logout))
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/auth/verify-wallet", post(auth_verify_wallet))
         .route("/v1/auth/metrics", get(auth_metrics))

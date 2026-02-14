@@ -137,6 +137,25 @@ q('btn-clear-session').onclick = () => {
   renderSession();
 };
 
+q('btn-logout').onclick = async () => withPending('btn-logout', async () => {
+  const wallet = q('wallet').value.trim();
+  const res = await callJson('/v1/auth/logout', 'POST', { wallet });
+  q('out-session').textContent = JSON.stringify(res, null, 2);
+  if (res.ok) {
+    const s = readSession();
+    s.authVerified = false;
+    s.authVerifiedAt = null;
+    s.challenge = '';
+    writeSession(s);
+    q('challenge').value = '';
+    q('sig').value = '[]';
+    renderSession();
+    toast('Logged out / auth invalidated');
+  } else {
+    toast(apiErrorText(res, 'Logout failed'), true);
+  }
+});
+
 q('btn-health').onclick = async () => {
   q('out-health').textContent = '...';
   q('out-health').textContent = JSON.stringify(await callJson('/health'), null, 2);
