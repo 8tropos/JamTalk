@@ -8,7 +8,7 @@ Public-beta readiness: onboarding/disclosures and lightweight product analytics.
 ### JT-039 (P1) — Landing page + onboarding routes
 - Add simple landing route with product overview + quickstart links
 - Keep app shell available at `/app`
-- Status: ⏳ planned
+- Status: ✅ implemented
 
 ### JT-040 (P1) — Privacy/terms disclosure pages
 - Add `/privacy` and `/terms` static disclosure routes

@@ -148,6 +148,13 @@ async fn ui_shell_routes_are_served() {
         .unwrap();
     assert_eq!(root.status(), 200);
 
+    let app_shell = app
+        .clone()
+        .oneshot(Request::builder().uri("/app").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(app_shell.status(), 200);
+
     let js = app
         .clone()
         .oneshot(

@@ -593,6 +593,7 @@ struct DevBootstrapResponse {
 const UI_HTML: &str = include_str!("../web/index.html");
 const UI_CSS: &str = include_str!("../web/styles.css");
 const UI_JS: &str = include_str!("../web/app.js");
+const LANDING_HTML: &str = include_str!("../web/landing.html");
 
 async fn health(State(state): State<AppState>) -> impl IntoResponse {
     Json(HealthResponse {
@@ -601,6 +602,10 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
         phase: "MVP / Phase 2.4",
         profile: state.runtime_config.profile.clone(),
     })
+}
+
+async fn landing_page() -> impl IntoResponse {
+    Html(LANDING_HTML)
 }
 
 async fn ui_index() -> impl IntoResponse {
@@ -2621,7 +2626,7 @@ async fn apply_security_headers<B>(mut res: Response<B>) -> Response<B> {
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(ui_index))
+        .route("/", get(landing_page))
         .route("/app", get(ui_index))
         .route("/app.js", get(ui_js))
         .route("/styles.css", get(ui_css))
