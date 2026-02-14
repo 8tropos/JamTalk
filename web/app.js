@@ -43,6 +43,13 @@ function toast(msg, isError = false) {
   setTimeout(() => t.classList.add('hidden'), 2200);
 }
 
+function apiErrorText(res, fallback = 'Request failed') {
+  if (res?.body?.error?.code) {
+    return `${res.body.error.code}: ${res.body.error.message}`;
+  }
+  return fallback;
+}
+
 async function withPending(btnId, fn) {
   const btn = q(btnId);
   if (!btn) return fn();
@@ -223,7 +230,7 @@ q('btn-verify').onclick = async () => {
     renderSession();
     toast('Auth verified');
   } else {
-    toast('Auth verify failed', true);
+    toast(apiErrorText(res, 'Auth verify failed'), true);
   }
 };
 
@@ -242,7 +249,7 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
     const c = await callJson('/v1/auth/challenge', 'POST', { wallet });
     if (!c.ok) {
       q('out-verify').textContent = JSON.stringify(c, null, 2);
-      toast('Challenge request failed', true);
+      toast(apiErrorText(c, 'Challenge request failed'), true);
       return;
     }
     challenge = c.body.challenge;
@@ -269,7 +276,7 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
     renderSession();
     toast('EVM auth verified');
   } else {
-    toast('EVM verify failed', true);
+    toast(apiErrorText(res, 'EVM verify failed'), true);
   }
 });
 
@@ -321,7 +328,7 @@ q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => 
   if (res.ok) {
     toast('Message sent');
   } else {
-    toast('Send failed', true);
+    toast(apiErrorText(res, 'Send failed'), true);
   }
 });
 
@@ -400,7 +407,7 @@ q('btn-blob-register').onclick = async () => withPending('btn-blob-register', as
     q('msg-chunk-count').value = String(res.body.chunk_count);
     toast('Blob registered');
   } else {
-    toast('Blob register failed', true);
+    toast(apiErrorText(res, 'Blob register failed'), true);
   }
 });
 

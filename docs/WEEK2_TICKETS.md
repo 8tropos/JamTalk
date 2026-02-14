@@ -24,7 +24,8 @@ Harden auth/session safety and move from dev-only UX toward production-safe brow
 
 ### JT-020 (P0) — Structured API error objects for UI handling
 - Replace plain text errors with machine-readable API error envelope
-- Status: ⏳ planned
+- Expose `error.code` and `error.message` for browser UI rendering/toasts
+- Status: ✅ implemented
 
 ### JT-021 (P0) — Message detail endpoint + timeline enrichment
 - Expose fuller message metadata for richer chat rendering

@@ -148,6 +148,39 @@ async fn auth_challenge_and_verify_roundtrip() {
 }
 
 #[tokio::test]
+async fn auth_verify_errors_use_structured_envelope() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let verify_payload = serde_json::json!({
+        "wallet":"wallet-missing",
+        "challenge":"abc",
+        "signature_ed25519": [1,2,3],
+        "sig_pubkey_ed25519": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    });
+
+    let verify_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/verify")
+                .header("content-type", "application/json")
+                .body(Body::from(verify_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(verify_resp.status(), 401);
+    let body = axum::body::to_bytes(verify_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["error"]["code"], "AUTH_CHALLENGE_MISSING");
+}
+
+#[tokio::test]
 async fn auth_challenge_replay_is_rejected() {
     let app_state = web_api::AppState::new(ServiceState::default());
     let app = web_api::build_router(app_state);

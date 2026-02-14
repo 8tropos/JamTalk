@@ -60,6 +60,18 @@ struct HealthResponse {
 }
 
 #[derive(Serialize)]
+struct ApiError {
+    ok: bool,
+    error: ApiErrorBody,
+}
+
+#[derive(Serialize)]
+struct ApiErrorBody {
+    code: String,
+    message: String,
+}
+
+#[derive(Serialize)]
 struct StatusResponse {
     identities: usize,
     conversations: usize,
@@ -419,7 +431,8 @@ async fn auth_challenge(
     Json(req): Json<ChallengeRequest>,
 ) -> impl IntoResponse {
     if req.wallet.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, "wallet required").into_response();
+        return api_error(StatusCode::BAD_REQUEST, "AUTH_WALLET_REQUIRED", "wallet required")
+            .into_response();
     }
 
     let challenge = random_challenge_hex();
@@ -456,16 +469,31 @@ async fn auth_verify(
     };
 
     let Some(expected_entry) = expected else {
-        return (StatusCode::UNAUTHORIZED, "no challenge for wallet").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_MISSING",
+            "no challenge for wallet",
+        )
+        .into_response();
     };
 
     let now = now_unix_s();
     if expected_entry.expires_at_unix_s <= now {
-        return (StatusCode::UNAUTHORIZED, "challenge expired").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_EXPIRED",
+            "challenge expired",
+        )
+        .into_response();
     }
 
     if expected_entry.challenge != req.challenge {
-        return (StatusCode::UNAUTHORIZED, "challenge mismatch").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_MISMATCH",
+            "challenge mismatch",
+        )
+        .into_response();
     }
 
     {
@@ -474,7 +502,12 @@ async fn auth_verify(
             .lock()
             .expect("consumed lock");
         if consumed.contains(&req.challenge) {
-            return (StatusCode::UNAUTHORIZED, "challenge replay detected").into_response();
+            return api_error(
+                StatusCode::UNAUTHORIZED,
+                "AUTH_CHALLENGE_REPLAY",
+                "challenge replay detected",
+            )
+            .into_response();
         }
     }
 
@@ -483,17 +516,36 @@ async fn auth_verify(
 
         let vk = match VerifyingKey::from_bytes(&req.sig_pubkey_ed25519) {
             Ok(v) => v,
-            Err(_) => return (StatusCode::UNAUTHORIZED, "invalid pubkey").into_response(),
+            Err(_) => {
+                return api_error(
+                    StatusCode::UNAUTHORIZED,
+                    "AUTH_PUBKEY_INVALID",
+                    "invalid pubkey",
+                )
+                .into_response()
+            }
         };
         let sig = match Signature::from_slice(&req.signature_ed25519) {
             Ok(s) => s,
-            Err(_) => return (StatusCode::UNAUTHORIZED, "invalid signature").into_response(),
+            Err(_) => {
+                return api_error(
+                    StatusCode::UNAUTHORIZED,
+                    "AUTH_SIGNATURE_INVALID",
+                    "invalid signature",
+                )
+                .into_response()
+            }
         };
         vk.verify(req.challenge.as_bytes(), &sig).is_ok()
     };
 
     if !ok {
-        return (StatusCode::UNAUTHORIZED, "signature verify failed").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_SIGNATURE_VERIFY_FAILED",
+            "signature verify failed",
+        )
+        .into_response();
     }
 
     {
@@ -528,16 +580,31 @@ async fn auth_verify_wallet(
     };
 
     let Some(expected_entry) = expected else {
-        return (StatusCode::UNAUTHORIZED, "no challenge for wallet").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_MISSING",
+            "no challenge for wallet",
+        )
+        .into_response();
     };
 
     let now = now_unix_s();
     if expected_entry.expires_at_unix_s <= now {
-        return (StatusCode::UNAUTHORIZED, "challenge expired").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_EXPIRED",
+            "challenge expired",
+        )
+        .into_response();
     }
 
     if expected_entry.challenge != req.challenge {
-        return (StatusCode::UNAUTHORIZED, "challenge mismatch").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_CHALLENGE_MISMATCH",
+            "challenge mismatch",
+        )
+        .into_response();
     }
 
     {
@@ -546,17 +613,34 @@ async fn auth_verify_wallet(
             .lock()
             .expect("consumed lock");
         if consumed.contains(&req.challenge) {
-            return (StatusCode::UNAUTHORIZED, "challenge replay detected").into_response();
+            return api_error(
+                StatusCode::UNAUTHORIZED,
+                "AUTH_CHALLENGE_REPLAY",
+                "challenge replay detected",
+            )
+            .into_response();
         }
     }
 
     let recovered = match recover_evm_address(&req.challenge, &req.signature_hex) {
         Ok(v) => v,
-        Err(_) => return (StatusCode::UNAUTHORIZED, "signature verify failed").into_response(),
+        Err(_) => {
+            return api_error(
+                StatusCode::UNAUTHORIZED,
+                "AUTH_SIGNATURE_VERIFY_FAILED",
+                "signature verify failed",
+            )
+            .into_response()
+        }
     };
 
     if !recovered.eq_ignore_ascii_case(&req.wallet) {
-        return (StatusCode::UNAUTHORIZED, "wallet mismatch").into_response();
+        return api_error(
+            StatusCode::UNAUTHORIZED,
+            "AUTH_WALLET_MISMATCH",
+            "wallet mismatch",
+        )
+        .into_response();
     }
 
     {
@@ -597,15 +681,29 @@ fn parse_conv_type(s: &str) -> Result<ConversationType, ServiceError> {
     }
 }
 
-fn error_to_http(err: ServiceError) -> (StatusCode, String) {
-    let code = err.code();
-    let status = match code {
+fn api_error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<ApiError>) {
+    (
+        status,
+        Json(ApiError {
+            ok: false,
+            error: ApiErrorBody {
+                code: code.to_string(),
+                message: message.to_string(),
+            },
+        }),
+    )
+}
+
+fn error_to_http(err: ServiceError) -> (StatusCode, Json<ApiError>) {
+    let code_num = err.code();
+    let status = match code_num {
         1003 | 1101 | 1103 | 1201 | 1202 | 1203 | 1204 | 1301 | 1601 | 1803 => {
             StatusCode::UNAUTHORIZED
         }
         _ => StatusCode::BAD_REQUEST,
     };
-    (status, format!("{} ({code})", err))
+    let code = format!("JT-{code_num}");
+    api_error(status, &code, &err.to_string())
 }
 
 async fn dev_register_device(
@@ -1146,7 +1244,12 @@ async fn send_message(
             }),
         )
             .into_response(),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "unexpected event").into_response(),
+        _ => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_UNEXPECTED_EVENT",
+            "unexpected event",
+        )
+        .into_response(),
     }
 }
 
