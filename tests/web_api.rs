@@ -1294,3 +1294,47 @@ async fn send_message_idempotency_key_rejects_different_payload() {
         }
     }
 }
+
+#[tokio::test]
+async fn ops_rate_limits_endpoints_list_and_reset_buckets() {
+    let app_state = web_api::AppState::new(ServiceState::default());
+    let app = web_api::build_router(app_state);
+
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/auth/challenge")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"wallet":"ops-wallet"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let list_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/ops/rate-limits")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(list_resp.status(), 200);
+
+    let reset_resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/ops/rate-limits")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"key":"challenge:ops-wallet"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reset_resp.status(), 200);
+}

@@ -18,5 +18,5 @@ Close key closed-beta backend gaps: delivery/read status visibility, safe client
 
 ### JT-035 (P1) — Auth abuse dashboard + ops controls
 - Add `GET /v1/ops/rate-limits` for bucket visibility
-- Add `POST /v1/ops/rate-limits/reset` for targeted key reset
-- Status: ⏳ planned
+- Add `POST /v1/ops/rate-limits` for targeted key reset
+- Status: ✅ implemented

@@ -119,6 +119,32 @@ struct AuthMetricsResponse {
     metrics: AuthMetrics,
 }
 
+#[derive(Serialize)]
+struct OpsRateLimitBucketItem {
+    key: String,
+    tokens: f64,
+    last_refill_unix_s: u64,
+}
+
+#[derive(Serialize)]
+struct OpsRateLimitsResponse {
+    ok: bool,
+    bucket_capacity: f64,
+    bucket_refill_per_s: f64,
+    buckets: Vec<OpsRateLimitBucketItem>,
+}
+
+#[derive(Deserialize)]
+struct OpsRateLimitResetRequest {
+    key: String,
+}
+
+#[derive(Serialize)]
+struct OpsRateLimitResetResponse {
+    ok: bool,
+    removed: bool,
+}
+
 #[derive(Deserialize)]
 struct ChallengeRequest {
     wallet: String,
@@ -560,6 +586,53 @@ async fn status(State(state): State<AppState>) -> impl IntoResponse {
 async fn auth_metrics(State(state): State<AppState>) -> impl IntoResponse {
     let m = state.auth_metrics.lock().expect("metrics lock").clone();
     Json(AuthMetricsResponse { ok: true, metrics: m })
+}
+
+async fn ops_rate_limits(State(state): State<AppState>) -> impl IntoResponse {
+    let mut buckets = state
+        .auth_rate_buckets
+        .lock()
+        .expect("rate lock")
+        .iter()
+        .map(|(key, bucket)| OpsRateLimitBucketItem {
+            key: key.clone(),
+            tokens: bucket.tokens,
+            last_refill_unix_s: bucket.last_refill_unix_s,
+        })
+        .collect::<Vec<_>>();
+    buckets.sort_by(|a, b| a.key.cmp(&b.key));
+
+    (
+        StatusCode::OK,
+        Json(OpsRateLimitsResponse {
+            ok: true,
+            bucket_capacity: AUTH_RATE_BUCKET_CAPACITY,
+            bucket_refill_per_s: AUTH_RATE_BUCKET_REFILL_PER_S,
+            buckets,
+        }),
+    )
+}
+
+async fn ops_rate_limits_reset(
+    State(state): State<AppState>,
+    Json(req): Json<OpsRateLimitResetRequest>,
+) -> impl IntoResponse {
+    if req.key.trim().is_empty() {
+        return api_error(StatusCode::BAD_REQUEST, "OPS_KEY_REQUIRED", "key required").into_response();
+    }
+
+    let removed = state
+        .auth_rate_buckets
+        .lock()
+        .expect("rate lock")
+        .remove(&req.key)
+        .is_some();
+
+    (
+        StatusCode::OK,
+        Json(OpsRateLimitResetResponse { ok: true, removed }),
+    )
+        .into_response()
 }
 
 fn random_challenge_hex() -> String {
@@ -2212,6 +2285,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/auth/verify", post(auth_verify))
         .route("/v1/auth/verify-wallet", post(auth_verify_wallet))
         .route("/v1/auth/metrics", get(auth_metrics))
+        .route("/v1/ops/rate-limits", get(ops_rate_limits).post(ops_rate_limits_reset))
         .route("/v1/pop/verify", post(pop_verify))
         .route("/v1/blobs/register", post(register_blob))
         .route("/v1/conversations", get(list_conversations).post(create_conversation))
