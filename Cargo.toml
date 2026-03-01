@@ -33,3 +33,7 @@ pretty_assertions = "1"
 proptest = "1"
 tower = "0.5"
 serde_json = "1"
+
+[profile.dev]
+debug = 0
+incremental = true
