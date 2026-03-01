@@ -14,7 +14,22 @@
         <p class="muted"><a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/v1/status">Status</a></p>
       </header>
 
-      <section class="card">
+      <section class="card hero-grid">
+        <div>
+          <h2>Control Room</h2>
+          <p class="muted">Use this shell as a trust-first QA cockpit: connect identity, verify auth, create conversations, send encrypted payload roots, and validate timeline/read behavior.</p>
+        </div>
+        <div class="pill-row" aria-label="quick navigation">
+          <a class="pill" href="#wallet-session">Wallet</a>
+          <a class="pill" href="#auth-challenge">Auth</a>
+          <a class="pill" href="#pop-verify">PoP</a>
+          <a class="pill" href="#conversation-flow">Conversations</a>
+          <a class="pill" href="#composer-anchor">Composer</a>
+          <a class="pill" href="#timeline-anchor">Timeline</a>
+        </div>
+      </section>
+
+      <section class="card" id="health-checks">
         <h2>Health</h2>
         <button id="btn-health">Check API health</button>
         <button id="btn-auth-metrics">Get auth metrics</button>
@@ -22,7 +37,7 @@
         <pre id="out-auth-metrics"></pre>
       </section>
 
-      <section class="card">
+      <section class="card" id="wallet-session">
         <h2>Wallet Session (browser-first)</h2>
         <div class="row">
           <input id="wallet" placeholder="wallet-1 / 0x..." />
@@ -64,7 +79,7 @@
         <pre id="out-session"></pre>
       </section>
 
-      <section class="card grid-2">
+      <section class="card grid-2" id="auth-challenge">
         <div>
           <h2>Auth: Challenge</h2>
           <button id="btn-challenge">Request challenge</button>
@@ -84,7 +99,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" id="pop-verify">
         <h2>PoP Verify</h2>
         <div class="row">
           <input id="pop-account" placeholder="account [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
@@ -118,7 +133,7 @@
         <pre id="out-blob"></pre>
       </section>
 
-      <section class="card">
+      <section class="card" id="conversation-flow">
         <h2>Conversation + Send + Read (JT-009 UI flow)</h2>
         <p class="muted">Browser form flow for `/v1/conversations`, `/v1/messages/send`, `/v1/messages/read`</p>
 
@@ -220,7 +235,7 @@
         <p class="muted">Auto-refresh pauses when tab is hidden and resumes when visible.</p>
         <pre id="out-list"></pre>
 
-        <h3>Chat timeline (JT-015/JT-021)</h3>
+        <h3 id="timeline-anchor">Chat timeline (JT-015/JT-021)</h3>
         <div class="row">
           <button id="btn-render-timeline">Render timeline</button>
           <label class="inline"><input id="timeline-autoscroll" type="checkbox" checked /> auto-scroll</label>
