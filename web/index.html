@@ -245,6 +245,26 @@
                 </div>
                 <span class="panel-chip">Essential</span>
               </div>
+              <div class="onboarding-card">
+                <div>
+                  <p class="section-kicker">Onboarding</p>
+                  <h3>Get to your first message</h3>
+                  <p id="onboarding-summary" class="muted small">Connect a wallet, verify access, create or load a chat, then send your first encrypted message.</p>
+                </div>
+                <div class="onboarding-progress">
+                  <div class="progress-track"><span id="onboarding-progress-bar"></span></div>
+                  <strong id="onboarding-progress-copy">Step 1 of 4</strong>
+                </div>
+                <div id="onboarding-checklist" class="checklist"></div>
+                <div class="row compact-row two-up">
+                  <button id="btn-onboarding-connect" class="secondary-btn">Use demo identity</button>
+                  <button id="btn-onboarding-verify">Complete demo sign-in</button>
+                </div>
+                <div class="row compact-row two-up">
+                  <button id="btn-onboarding-create" class="secondary-btn">Create starter chat</button>
+                  <button id="btn-onboarding-bootstrap" class="secondary-btn">Load demo data</button>
+                </div>
+              </div>
               <div class="row compact-row two-up">
                 <button id="btn-health" class="secondary-btn">API health</button>
                 <button id="btn-status" class="secondary-btn">Status</button>
@@ -297,21 +317,45 @@
             <details class="glass-panel inspector-card" open>
               <summary>Start or manage a chat</summary>
               <div class="detail-stack" id="conversation-flow">
+                <div class="quick-create-card">
+                  <div>
+                    <p class="section-kicker">Conversation setup</p>
+                    <h3>Quick create</h3>
+                    <p class="muted small">Generate a conversation id, prefill participant accounts from simple demo seeds, and call the existing create endpoint with the same signed payload shape.</p>
+                  </div>
+                  <div class="row compact-row two-up">
+                    <input id="quick-conv-name" placeholder="chat label for local UI, eg Product squad" value="Starter chat" />
+                    <select id="quick-conv-type">
+                      <option value="dm">Direct message</option>
+                      <option value="group">Group</option>
+                    </select>
+                  </div>
+                  <div class="row compact-row two-up">
+                    <input id="quick-creator-seed" placeholder="creator seed" value="1" />
+                    <input id="quick-participant-seeds" placeholder="participant seeds csv" value="1,2" />
+                  </div>
+                  <div class="row compact-row three-up">
+                    <button id="btn-quick-fill-conv" class="secondary-btn">Generate payload</button>
+                    <button id="btn-quick-create-conv">Create starter chat</button>
+                    <button id="btn-list-members" class="secondary-btn">List members</button>
+                  </div>
+                  <div id="quick-conv-hint" class="capability">Use demo seeds like 1,2 for a DM or 1,2,3 for a group. The advanced JSON fields below stay editable.</div>
+                </div>
                 <div class="row compact-row two-up">
                   <button id="btn-conv-create">Create conversation</button>
-                  <button id="btn-list-members" class="secondary-btn">List members</button>
-                </div>
-                <div class="row compact-row two-up">
                   <button id="btn-add-member">Add member</button>
+                </div>
+                <div class="row compact-row two-up">
                   <button id="btn-remove-member" class="danger-btn">Remove member</button>
-                </div>
-                <div class="row compact-row two-up">
                   <button id="btn-promote-member" class="secondary-btn">Promote to admin</button>
-                  <button id="btn-demote-member" class="secondary-btn">Demote admin</button>
                 </div>
                 <div class="row compact-row two-up">
+                  <button id="btn-demote-member" class="secondary-btn">Demote admin</button>
                   <button id="btn-list-messages" class="secondary-btn">Refresh messages</button>
+                </div>
+                <div class="row compact-row two-up">
                   <button id="btn-message-detail" class="secondary-btn">Message detail</button>
+                  <button id="btn-auto-fill-message" class="secondary-btn">Align message sender</button>
                 </div>
                 <div class="row compact-row two-up">
                   <input id="detail-seq" placeholder="seq for message detail" value="1" />

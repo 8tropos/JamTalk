@@ -46,7 +46,7 @@ body {
 a { color: #a8e2ff; text-decoration: none; }
 a:hover { color: white; }
 
-button, input, textarea, summary { font: inherit; }
+button, input, textarea, select, summary { font: inherit; }
 
 .app-shell {
   min-height: 100vh;
@@ -491,6 +491,77 @@ summary::marker,
 }
 
 .status-card { position: sticky; top: 0; z-index: 2; }
+
+.onboarding-card,
+.quick-create-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(100, 216, 255, 0.09), rgba(255,255,255,0.03));
+  border: 1px solid rgba(134, 176, 255, 0.16);
+}
+
+.onboarding-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width .2s ease;
+}
+
+.checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.checklist-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.checklist-item span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  color: #dce8ff;
+  font-weight: 800;
+}
+
+.checklist-item.done span {
+  background: rgba(115, 239, 187, 0.18);
+  color: #baf8d8;
+}
+
+.checklist-item p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .inspector-card summary,
 .nested-panel summary {
   list-style: none;
@@ -515,7 +586,7 @@ summary::marker,
 .three-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .four-up { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-input, textarea, button {
+input, textarea, select, button {
   width: 100%;
   border-radius: 16px;
   border: 1px solid rgba(145, 173, 255, 0.22);

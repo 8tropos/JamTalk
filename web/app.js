@@ -8,6 +8,7 @@ let refreshTimer = null;
 let conversationItems = [];
 let activeConversationKey = null;
 let selectedMessageSeq = null;
+let conversationDraftNames = {};
 
 function readSession() {
   try {
@@ -29,6 +30,125 @@ function shortAccount(a) {
 function accountInitials(a) {
   if (!Array.isArray(a) || !a.length) return 'JT';
   return a.slice(0, 2).map((v) => Number(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function seededAccount(seed) {
+  const n = Number(seed || 0);
+  return Array.from({ length: 32 }, () => n);
+}
+
+function randomConversationId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+function parseSeedCsv(value) {
+  return (value || '')
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((part) => Number.isInteger(part) && part >= 0 && part <= 255);
+}
+
+function currentConversationDraftName() {
+  return q('quick-conv-name')?.value?.trim() || 'New chat';
+}
+
+function setConversationHint(text, kind = 'ok') {
+  const box = q('quick-conv-hint');
+  if (!box) return;
+  box.classList.remove('ok', 'warn');
+  if (kind) box.classList.add(kind);
+  box.textContent = text;
+}
+
+function syncConversationDraftFromForm() {
+  const convValue = q('conv-id')?.value?.trim();
+  if (!convValue) return;
+  conversationDraftNames[convValue] = currentConversationDraftName();
+}
+
+function prefillParticipantFields(accounts = []) {
+  if (!accounts.length) return;
+  q('conv-creator').value = JSON.stringify(accounts[0]);
+  q('msg-sender').value = JSON.stringify(accounts[0]);
+  q('member-actor').value = JSON.stringify(accounts[0]);
+  q('read-reader').value = JSON.stringify(accounts[Math.min(1, accounts.length - 1)]);
+  if (accounts[1]) q('member-target').value = JSON.stringify(accounts[1]);
+}
+
+function syncQuickConversationInputsFromAdvanced() {
+  try {
+    const participants = JSON.parse(q('conv-participants').value);
+    const seeds = Array.isArray(participants)
+      ? participants.map((account) => Array.isArray(account) ? Number(account[0]) : null).filter((v) => Number.isInteger(v))
+      : [];
+    if (seeds.length) q('quick-participant-seeds').value = seeds.join(',');
+  } catch {}
+  try {
+    const creator = JSON.parse(q('conv-creator').value);
+    if (Array.isArray(creator) && creator.length) q('quick-creator-seed').value = String(Number(creator[0]));
+  } catch {}
+  if (q('conv-type')?.value) q('quick-conv-type').value = q('conv-type').value;
+  const storedName = conversationDraftNames[q('conv-id')?.value?.trim() || ''];
+  if (storedName) q('quick-conv-name').value = storedName;
+}
+
+function buildQuickConversationDraft() {
+  const creatorSeed = Number(q('quick-creator-seed').value || '1');
+  const participantSeeds = parseSeedCsv(q('quick-participant-seeds').value);
+  const uniqueSeeds = [...new Set([creatorSeed, ...participantSeeds])].filter((seed) => Number.isInteger(seed) && seed >= 0 && seed <= 255);
+  if (!uniqueSeeds.length) throw new Error('Enter at least one valid demo seed between 0 and 255');
+  const accounts = uniqueSeeds.map(seededAccount);
+  const convId = randomConversationId();
+  q('conv-id').value = JSON.stringify(convId);
+  q('conv-type').value = q('quick-conv-type').value;
+  q('conv-creator').value = JSON.stringify(accounts[0]);
+  q('conv-participants').value = JSON.stringify(accounts);
+  prefillParticipantFields(accounts);
+  conversationDraftNames[q('conv-id').value] = currentConversationDraftName();
+  setConversationHint(`Draft ready: ${currentConversationDraftName()} with ${accounts.length} participant${accounts.length === 1 ? '' : 's'}. Sign and create when ready.`, 'ok');
+  updateShellSummary();
+  return { convId, accounts };
+}
+
+function onboardingState() {
+  const session = readSession();
+  return {
+    connected: !!session.wallet,
+    verified: !!session.authVerified,
+    hasConversation: !!activeConversationItem() || conversationItems.length > 0,
+    hasMessages: timelineItems.length > 0,
+  };
+}
+
+function renderOnboardingChecklist() {
+  const box = q('onboarding-checklist');
+  if (!box) return;
+  const state = onboardingState();
+  const steps = [
+    ['Connect wallet', state.connected, state.connected ? 'Wallet linked locally.' : 'Use demo identity or connect an injected wallet.'],
+    ['Verify access', state.verified, state.verified ? 'Session verified and ready for chat actions.' : 'Complete challenge verification to unlock messaging.'],
+    ['Open a chat', state.hasConversation, state.hasConversation ? 'A conversation is selected or available.' : 'Create a starter chat or load demo data.'],
+    ['Send a message', state.hasMessages, state.hasMessages ? 'Timeline has at least one message.' : 'Send your first encrypted message to complete the flow.'],
+  ];
+  const completed = steps.filter(([, done]) => done).length;
+  const current = Math.min(completed + 1, steps.length);
+  box.innerHTML = steps.map(([label, done, meta], index) => `
+    <div class="checklist-item ${done ? 'done' : ''}">
+      <span>${done ? '✓' : index + 1}</span>
+      <div><strong>${label}</strong><p>${meta}</p></div>
+    </div>
+  `).join('');
+  if (q('onboarding-progress-bar')) q('onboarding-progress-bar').style.width = `${(completed / steps.length) * 100}%`;
+  if (q('onboarding-progress-copy')) q('onboarding-progress-copy').textContent = completed === steps.length ? 'All core steps complete' : `Step ${current} of ${steps.length}`;
+  if (q('onboarding-summary')) q('onboarding-summary').textContent = !state.connected
+    ? 'Start by linking a wallet or using the built-in demo identity.'
+    : !state.verified
+      ? 'Wallet linked. Next, complete sign-in so the session can create chats and send messages.'
+      : !state.hasConversation
+        ? 'You are signed in. Create a starter chat or bootstrap demo data.'
+        : !state.hasMessages
+          ? 'Chat ready. Send the first message to confirm the end-to-end flow.'
+          : 'Core onboarding is complete. You can now manage members, inspect details, and continue testing.';
 }
 
 function shortHexBytes(a) {
@@ -89,7 +209,7 @@ function conversationParticipantCount(conv) {
 
 function humanConversationTitle(conv, index = 0) {
   if (!conv) return 'No chat selected';
-  return conv.title || `${(conv.conv_type || conv.kind || 'chat').toUpperCase()} ${index + 1}`;
+  return conv.title || conversationDraftNames[deriveConversationKey(conv)] || `${(conv.conv_type || conv.kind || 'chat').toUpperCase()} ${index + 1}`;
 }
 
 function humanMessageTitle(message) {
@@ -145,7 +265,9 @@ function selectMessage(seq) {
   const message = selectedMessageItem();
   if (message && q('detail-seq')) q('detail-seq').value = String(message.seq);
   updateOverviewCards();
+  renderOnboardingChecklist();
 }
+
 
 function summarizeSessionState(session = readSession()) {
   if (session.authVerified) return 'Verified';
@@ -154,6 +276,7 @@ function summarizeSessionState(session = readSession()) {
 }
 
 function updateShellSummary() {
+  syncQuickConversationInputsFromAdvanced();
   const session = readSession();
   const state = summarizeSessionState(session);
   const convCount = conversationItems.length;
@@ -174,6 +297,7 @@ function updateShellSummary() {
   }
 
   updateOverviewCards();
+  renderOnboardingChecklist();
 }
 
 function setActiveConversationTitle(title, subtitle) {
@@ -742,6 +866,61 @@ q('btn-pop').onclick = async () => {
   setOutput('out-pop', await callJson('/v1/pop/verify', 'POST', payload));
 };
 
+q('btn-onboarding-connect').onclick = () => {
+  q('wallet').value = `demo-wallet-${q('quick-creator-seed')?.value || '1'}`;
+  q('btn-connect').onclick();
+  prefillParticipantFields([seededAccount(Number(q('quick-creator-seed')?.value || '1')), seededAccount(2)]);
+  setConversationHint('Demo identity loaded. Next step: complete demo sign-in.', 'ok');
+};
+
+q('btn-onboarding-verify').onclick = async () => withPending('btn-onboarding-verify', async () => {
+  if (!q('wallet').value.trim()) q('btn-onboarding-connect').onclick();
+  await q('btn-challenge').onclick();
+  await q('btn-dev-sign-challenge').onclick();
+  await q('btn-verify').onclick();
+});
+
+q('btn-onboarding-create').onclick = async () => withPending('btn-onboarding-create', async () => {
+  buildQuickConversationDraft();
+  await q('btn-dev-sign-conv').onclick();
+  await q('btn-conv-create').onclick();
+});
+
+q('btn-onboarding-bootstrap').onclick = async () => {
+  await q('btn-demo-bootstrap').onclick();
+};
+
+q('btn-quick-fill-conv').onclick = () => {
+  try {
+    buildQuickConversationDraft();
+  } catch (error) {
+    setConversationHint(error.message || 'Unable to generate conversation draft', 'warn');
+    toast(error.message || 'Unable to generate conversation draft', true);
+  }
+};
+
+q('btn-quick-create-conv').onclick = async () => withPending('btn-quick-create-conv', async () => {
+  try {
+    buildQuickConversationDraft();
+  } catch (error) {
+    setConversationHint(error.message || 'Unable to generate conversation draft', 'warn');
+    toast(error.message || 'Unable to generate conversation draft', true);
+    return;
+  }
+  await q('btn-dev-sign-conv').onclick();
+  await q('btn-conv-create').onclick();
+});
+
+q('btn-auto-fill-message').onclick = () => {
+  try {
+    const participants = JSON.parse(q('conv-participants').value);
+    prefillParticipantFields(participants);
+    toast('Message sender and member fields aligned with this chat');
+  } catch {
+    toast('Conversation participants are not valid JSON yet', true);
+  }
+};
+
 q('btn-conv-create').onclick = async () => {
   setOutput('out-conv', 'Loading…');
   const payload = {
@@ -755,6 +934,10 @@ q('btn-conv-create').onclick = async () => {
   const res = await callJson('/v1/conversations', 'POST', payload);
   setOutput('out-conv', res);
   if (res.ok) {
+    const key = JSON.stringify(payload.conv_id);
+    conversationDraftNames[key] = currentConversationDraftName();
+    activeConversationKey = key;
+    setConversationHint(`Conversation created: ${conversationDraftNames[key]}`, 'ok');
     toast('Conversation created');
     await refreshLists();
   } else {
@@ -1146,9 +1329,11 @@ q('evm-allowed-chains')?.addEventListener('change', () => {
 });
 
 installMobileKeyboardSafety();
+syncQuickConversationInputsFromAdvanced();
 refreshWalletCapability();
 renderConversationList();
 renderTimeline();
 renderSession();
+renderOnboardingChecklist();
 updateOverviewCards();
 markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
