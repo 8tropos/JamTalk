@@ -1,6 +1,14 @@
 const q = (id) => document.getElementById(id);
 const SESSION_KEY = 'jamtalk.session.v1';
 
+let timelineItems = [];
+let nextBeforeSeq = null;
+let autoRefreshWanted = false;
+let refreshTimer = null;
+let conversationItems = [];
+let activeConversationKey = null;
+let selectedMessageSeq = null;
+
 function readSession() {
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
@@ -13,13 +21,175 @@ function writeSession(s) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(s));
 }
 
+function shortAccount(a) {
+  if (!Array.isArray(a)) return 'unknown';
+  return `${a.slice(0, 4).join(',')}...`;
+}
+
+function accountInitials(a) {
+  if (!Array.isArray(a) || !a.length) return 'JT';
+  return a.slice(0, 2).map((v) => Number(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+function shortHexBytes(a) {
+  if (!Array.isArray(a)) return 'n/a';
+  return a.slice(0, 6).map((v) => Number(v).toString(16).padStart(2, '0')).join('') + '...';
+}
+
+function prettyJson(value, fallback = 'Waiting…') {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function setOutput(id, value, fallback) {
+  const el = q(id);
+  if (!el) return;
+  el.textContent = prettyJson(value, fallback);
+}
+
+function isOutgoingMessage(message) {
+  try {
+    const sender = Array.isArray(message?.sender) ? JSON.stringify(message.sender) : '';
+    const composerSender = q('msg-sender')?.value?.trim() || '';
+    const creator = q('conv-creator')?.value?.trim() || '';
+    return !!sender && (sender === composerSender || sender === creator);
+  } catch {
+    return false;
+  }
+}
+
+function deriveConversationKey(conv) {
+  if (!conv) return q('conv-id')?.value?.trim() || 'active';
+  if (typeof conv.conv_id === 'string') return conv.conv_id;
+  if (Array.isArray(conv.conv_id)) return JSON.stringify(conv.conv_id);
+  if (Array.isArray(conv.id)) return JSON.stringify(conv.id);
+  return String(conv.conv_id || conv.id || 'active');
+}
+
+
+function activeConversationItem() {
+  return conversationItems.find((item) => deriveConversationKey(item) === activeConversationKey) || null;
+}
+
+function selectedMessageItem() {
+  return timelineItems.find((item) => item.seq === selectedMessageSeq) || null;
+}
+
+function conversationParticipantCount(conv) {
+  if (!conv) return 0;
+  if (Array.isArray(conv.participants)) return conv.participants.length;
+  if (Array.isArray(conv.initial_participants)) return conv.initial_participants.length;
+  return Number(conv.member_count || 0);
+}
+
+function humanConversationTitle(conv, index = 0) {
+  if (!conv) return 'No chat selected';
+  return conv.title || `${(conv.conv_type || conv.kind || 'chat').toUpperCase()} ${index + 1}`;
+}
+
+function humanMessageTitle(message) {
+  if (!message) return 'No message selected';
+  return `Message #${message.seq}`;
+}
+
+function updateOverviewCards() {
+  const session = readSession();
+  const conv = activeConversationItem();
+  const message = selectedMessageItem();
+  const state = summarizeSessionState(session);
+  const walletShort = session.wallet ? `${String(session.wallet).slice(0, 8)}…${String(session.wallet).slice(-4)}` : 'No wallet';
+
+  if (q('session-human-state')) q('session-human-state').textContent = state === 'Verified' ? 'Verified session ready' : state === 'Connected' ? 'Wallet connected, verify to send' : 'Connect a wallet to start';
+  if (q('session-wallet-short')) q('session-wallet-short').textContent = walletShort;
+  if (q('summary-session-trust')) q('summary-session-trust').textContent = state;
+  if (q('summary-session-meta')) q('summary-session-meta').textContent = state === 'Verified'
+    ? `Signed in${session.walletType ? ` via ${session.walletType.toUpperCase()}` : ''}. Messaging and member actions are available.`
+    : state === 'Connected'
+      ? 'Wallet linked locally. Finish challenge verification for full messaging.'
+      : 'No active wallet session yet.';
+
+  if (q('summary-conversation-name')) q('summary-conversation-name').textContent = conv ? humanConversationTitle(conv, conversationItems.indexOf(conv)) : 'No chat selected';
+  if (q('summary-conversation-meta')) q('summary-conversation-meta').textContent = conv
+    ? `${conversationParticipantCount(conv)} participant${conversationParticipantCount(conv) === 1 ? '' : 's'} • ${conv.conv_type || conv.kind || 'chat'} • ${timelineItems.length} visible message${timelineItems.length === 1 ? '' : 's'}`
+    : 'Choose a conversation to load its participant and timeline summary.';
+
+  if (q('hero-active-chat')) q('hero-active-chat').textContent = conv ? humanConversationTitle(conv, conversationItems.indexOf(conv)) : 'No selection';
+  if (q('hero-active-chat-meta')) q('hero-active-chat-meta').textContent = conv
+    ? `${conversationParticipantCount(conv)} participant${conversationParticipantCount(conv) === 1 ? '' : 's'} • ${conv.conv_type || conv.kind || 'chat'}`
+    : 'Choose or create a conversation';
+  if (q('hero-trust-state')) q('hero-trust-state').textContent = state === 'Verified' ? 'Trusted session live' : state === 'Connected' ? 'Verification pending' : 'Session pending';
+  if (q('hero-trust-meta')) q('hero-trust-meta').textContent = state === 'Verified'
+    ? 'Wallet verified. You can send and manage conversations.'
+    : state === 'Connected'
+      ? 'Wallet connected. Run challenge verification to unlock full actions.'
+      : 'Verify a wallet session to unlock the full flow';
+
+  if (q('summary-message-title')) q('summary-message-title').textContent = humanMessageTitle(message);
+  if (q('summary-message-meta')) q('summary-message-meta').textContent = message
+    ? `Sender ${shortAccount(message.sender)} • slot ${message.slot ?? '-'} • ${message.cipher_len ?? '-'} encrypted bytes • ${message.chunk_count ?? '-'} chunk${message.chunk_count === 1 ? '' : 's'}`
+    : 'Click a message bubble to inspect delivery and payload details.';
+}
+
+function markSyncState(label, meta) {
+  if (q('hero-sync-state')) q('hero-sync-state').textContent = label;
+  if (q('hero-sync-meta')) q('hero-sync-meta').textContent = meta;
+}
+
+function selectMessage(seq) {
+  selectedMessageSeq = seq;
+  const message = selectedMessageItem();
+  if (message && q('detail-seq')) q('detail-seq').value = String(message.seq);
+  updateOverviewCards();
+}
+
+function summarizeSessionState(session = readSession()) {
+  if (session.authVerified) return 'Verified';
+  if (session.wallet) return 'Connected';
+  return 'Offline';
+}
+
+function updateShellSummary() {
+  const session = readSession();
+  const state = summarizeSessionState(session);
+  const convCount = conversationItems.length;
+  const msgCount = timelineItems.length;
+
+  if (q('sidebar-conversation-count')) q('sidebar-conversation-count').textContent = String(convCount);
+  if (q('sidebar-message-count')) q('sidebar-message-count').textContent = String(msgCount);
+  if (q('sidebar-session-state')) q('sidebar-session-state').textContent = state;
+
+  const conv = activeConversationItem();
+  if (q('active-conversation-title')) {
+    q('active-conversation-title').textContent = conv ? humanConversationTitle(conv, conversationItems.indexOf(conv)) : 'Your secure inbox';
+  }
+  if (q('active-conversation-subtitle')) {
+    q('active-conversation-subtitle').textContent = conv
+      ? `${conversationParticipantCount(conv)} participant${conversationParticipantCount(conv) === 1 ? '' : 's'} • ${conv.conv_type || conv.kind || 'chat'} • ${msgCount} message${msgCount === 1 ? '' : 's'} visible`
+      : `${session.wallet ? `Wallet ${session.wallet}` : 'No wallet connected yet'} • ${state} session • choose a chat or bootstrap demo data.`;
+  }
+
+  updateOverviewCards();
+}
+
+function setActiveConversationTitle(title, subtitle) {
+  if (q('active-conversation-title')) q('active-conversation-title').textContent = title;
+  if (q('active-conversation-subtitle')) q('active-conversation-subtitle').textContent = subtitle;
+}
+
 function renderSession() {
   const s = readSession();
-  q('out-session').textContent = JSON.stringify(s, null, 2);
+  setOutput('out-session', s, 'No local session yet.');
   if (s.wallet) q('wallet').value = s.wallet;
   if (s.challenge) q('challenge').value = s.challenge;
   if (s.pubkey) q('pubkey').value = JSON.stringify(s.pubkey);
   if (s.signature) q('sig').value = JSON.stringify(s.signature);
+  updateShellSummary();
+  updateOverviewCards();
 }
 
 async function callJson(url, method = 'GET', body = null) {
@@ -64,8 +234,192 @@ async function withPending(btnId, fn) {
   }
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function messagePreview(message) {
+  if (!message) return 'No messages yet';
+  return `seq #${message.seq} • cipher ${message.cipher_len ?? '-'} bytes • ${message.chunk_count ?? '-'} chunk${message.chunk_count === 1 ? '' : 's'}`;
+}
+
+function renderConversationList() {
+  const box = q('conversation-list');
+  if (!box) return;
+  if (!conversationItems.length) {
+    box.innerHTML = `
+      <div class="empty-state compact">
+        <div class="empty-icon">💬</div>
+        <div>
+          <strong>No chats loaded yet</strong>
+          <p>Run the demo bootstrap or refresh conversations to populate the sidebar.</p>
+        </div>
+      </div>
+    `;
+    updateShellSummary();
+    return;
+  }
+
+  box.innerHTML = conversationItems.map((conv, index) => {
+    const key = deriveConversationKey(conv);
+    const active = key === activeConversationKey || (!activeConversationKey && index === 0);
+    const title = humanConversationTitle(conv, index);
+    const participantCount = Array.isArray(conv.participants)
+      ? conv.participants.length
+      : Array.isArray(conv.initial_participants)
+        ? conv.initial_participants.length
+        : Number(conv.member_count || 0);
+    const snippet = conv.last_message_preview || conv.last_message || `Secure ${conv.conv_type || conv.kind || 'chat'} • ${participantCount || 0} participant${participantCount === 1 ? '' : 's'}`;
+    const avatar = escapeHtml((title || 'JT').slice(0, 2).toUpperCase());
+    return `
+      <button class="conversation-card ${active ? 'active' : ''}" data-conv-key="${escapeHtml(key)}" type="button">
+        <div class="conversation-card-main">
+          <div class="conversation-avatar">${avatar}</div>
+          <div class="conversation-card-copy">
+            <div class="conversation-card-header">
+              <span class="conversation-title">${escapeHtml(title)}</span>
+              <span class="conversation-meta">${escapeHtml(conv.conv_type || conv.kind || 'chat')}</span>
+            </div>
+            <p class="conversation-snippet">${escapeHtml(snippet)}</p>
+            <div class="conversation-meta">${participantCount || 0} participant${participantCount === 1 ? '' : 's'}</div>
+          </div>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  box.querySelectorAll('[data-conv-key]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const key = el.getAttribute('data-conv-key');
+      const conv = conversationItems.find((item) => deriveConversationKey(item) === key);
+      activeConversationKey = key;
+      if (conv?.conv_id && Array.isArray(conv.conv_id)) {
+        q('conv-id').value = JSON.stringify(conv.conv_id);
+      }
+      renderConversationList();
+      setActiveConversationTitle(
+        humanConversationTitle(conv, conversationItems.indexOf(conv)),
+        `${conversationParticipantCount(conv)} participant${conversationParticipantCount(conv) === 1 ? '' : 's'} • ${conv?.conv_type || conv?.kind || 'chat'}`
+      );
+      updateOverviewCards();
+      await fetchMessagesPage(null, false);
+    });
+  });
+
+  updateShellSummary();
+}
+
+function renderTimeline(msgRes) {
+  const box = q('timeline');
+  if (!box) return;
+  const items = msgRes?.body?.items || timelineItems;
+  if (!items.length) {
+    box.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🫧</div>
+        <div>
+          <strong>No timeline yet</strong>
+          <p>Create a conversation or bootstrap demo data to see the message stream here.</p>
+        </div>
+      </div>
+    `;
+    selectedMessageSeq = null;
+    updateShellSummary();
+    return;
+  }
+
+  const ordered = [...items].sort((a, b) => a.seq - b.seq);
+  if (!selectedMessageSeq || !ordered.some((m) => m.seq === selectedMessageSeq)) {
+    selectedMessageSeq = ordered[ordered.length - 1]?.seq ?? null;
+  }
+  box.innerHTML = ordered.map((m) => {
+    const outgoing = isOutgoingMessage(m);
+    const label = outgoing ? 'You' : 'Member';
+    const selected = m.seq === selectedMessageSeq;
+    return `
+      <article class="message-row ${outgoing ? 'outgoing' : 'incoming'} ${selected ? 'selected' : ''}">
+        <button class="message-cluster message-selectable" data-message-seq="${m.seq}" type="button">
+          <div class="message-avatar">${escapeHtml(accountInitials(m.sender))}</div>
+          <div class="message-bubble">
+            <div class="message-card-top">
+              <strong>${label}</strong>
+              <span class="message-badge">Delivered • #${m.seq}</span>
+            </div>
+            <p class="message-body">Encrypted JamTalk message<br/><span class="message-subline">Sender ${escapeHtml(shortAccount(m.sender))} • message ${escapeHtml(shortHexBytes(m.msg_id))}</span></p>
+            <div class="message-card-bottom">
+              <span class="message-meta">slot ${m.slot ?? '-'} • flags ${m.flags ?? 0}</span>
+              <span class="message-meta">${m.cipher_len ?? '-'} encrypted bytes • ${m.chunk_count ?? '-'} chunk${m.chunk_count === 1 ? '' : 's'}</span>
+            </div>
+          </div>
+        </button>
+      </article>
+    `;
+  }).join('');
+
+  box.querySelectorAll('[data-message-seq]').forEach((el) => {
+    el.addEventListener('click', () => {
+      selectMessage(Number(el.getAttribute('data-message-seq')));
+      renderTimeline();
+    });
+  });
+
+  const latest = ordered[ordered.length - 1];
+  markSyncState('Timeline synced', `Latest ${messagePreview(latest)}`);
+
+  if (q('timeline-autoscroll')?.checked) {
+    box.scrollTop = box.scrollHeight;
+  }
+  updateShellSummary();
+}
+
+async function fetchMessagesPage(beforeSeq = null, append = false) {
+  const conv = q('conv-id').value.trim();
+  const limit = Number(q('msg-page-limit').value || '20');
+  const params = new URLSearchParams({ conv_id: conv, limit: String(limit) });
+  if (beforeSeq !== null && beforeSeq !== undefined && beforeSeq !== '') {
+    params.set('before_seq', String(beforeSeq));
+  }
+  const res = await callJson(`/v1/messages?${params.toString()}`);
+  if (res.ok) {
+    nextBeforeSeq = res.body?.next_before_seq ?? null;
+    q('msg-before-seq').value = nextBeforeSeq ? String(nextBeforeSeq) : '';
+    if (append) {
+      const existing = new Map(timelineItems.map((m) => [m.seq, m]));
+      (res.body?.items || []).forEach((m) => existing.set(m.seq, m));
+      timelineItems = [...existing.values()];
+    } else {
+      timelineItems = res.body?.items || [];
+    }
+    renderTimeline();
+    updateOverviewCards();
+    markSyncState('Timeline synced', `Loaded ${timelineItems.length} message${timelineItems.length === 1 ? '' : 's'}${nextBeforeSeq ? ` • older cursor #${nextBeforeSeq}` : ''}`);
+  }
+  return res;
+}
+
+async function refreshLists() {
+  const convRes = await callJson('/v1/conversations');
+  if (convRes.ok) {
+    const list = convRes.body?.items || convRes.body?.conversations || convRes.body || [];
+    conversationItems = Array.isArray(list) ? list : [];
+    if (!activeConversationKey && conversationItems.length) {
+      activeConversationKey = deriveConversationKey(conversationItems[0]);
+    }
+    renderConversationList();
+  }
+  const msgRes = await fetchMessagesPage(null, false);
+  setOutput('out-list', { conversations: convRes, messages: msgRes }, 'No list payload yet.');
+  updateOverviewCards();
+}
+
+
 function devSeed() {
-  return Number(q('dev-seed').value || '1');
+  return Number(q('dev-seed')?.value || '1');
 }
 
 function setWalletCapability(kind, text) {
@@ -79,8 +433,8 @@ function setWalletCapability(kind, text) {
 function allowedChainIds() {
   return (q('evm-allowed-chains')?.value || '')
     .split(',')
-    .map(s => Number(s.trim()))
-    .filter(n => Number.isFinite(n) && n > 0);
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
 }
 
 async function currentChainIdDec() {
@@ -107,8 +461,9 @@ async function refreshWalletCapability() {
       setWalletCapability('ok', 'Injected EVM wallet detected. You can connect and use personal_sign verification.');
     }
   } else {
-    setWalletCapability('warn', 'No injected EVM wallet detected. Install MetaMask/Rabby in this browser, or use manual/dev signing flow below.');
+    setWalletCapability('warn', 'No injected EVM wallet detected. Install MetaMask or Rabby in this browser, or use manual/dev signing flow.');
   }
+  updateOverviewCards();
 }
 
 q('btn-connect').onclick = () => {
@@ -118,6 +473,9 @@ q('btn-connect').onclick = () => {
   s.connectedAt = new Date().toISOString();
   writeSession(s);
   renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
+  toast('Wallet connected locally');
 };
 
 q('btn-connect-evm').onclick = async () => {
@@ -140,9 +498,11 @@ q('btn-connect-evm').onclick = async () => {
     s.connectedAt = new Date().toISOString();
     writeSession(s);
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
     await refreshWalletCapability();
     toast('EVM wallet connected');
-  } catch (e) {
+  } catch {
     toast('Wallet connect failed', true);
   }
 };
@@ -155,24 +515,32 @@ q('btn-save-session').onclick = () => {
   s.challenge = q('challenge').value.trim();
   writeSession(s);
   renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
+  toast('Session saved locally');
 };
 
 q('btn-clear-session').onclick = () => {
   localStorage.removeItem(SESSION_KEY);
   renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
+  toast('Session cleared');
 };
 
 q('btn-refresh-auth').onclick = async () => withPending('btn-refresh-auth', async () => {
   const wallet = q('wallet').value.trim();
   const current_challenge = q('challenge').value.trim();
   const res = await callJson('/v1/auth/refresh', 'POST', { wallet, current_challenge });
-  q('out-session').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-session', res);
   if (res.ok && res.body?.challenge) {
     q('challenge').value = res.body.challenge;
     const s = readSession();
     s.challenge = res.body.challenge;
     writeSession(s);
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
     toast('Auth challenge refreshed');
   } else {
     toast(apiErrorText(res, 'Auth refresh failed'), true);
@@ -182,7 +550,7 @@ q('btn-refresh-auth').onclick = async () => withPending('btn-refresh-auth', asyn
 q('btn-logout').onclick = async () => withPending('btn-logout', async () => {
   const wallet = q('wallet').value.trim();
   const res = await callJson('/v1/auth/logout', 'POST', { wallet });
-  q('out-session').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-session', res);
   if (res.ok) {
     const s = readSession();
     s.authVerified = false;
@@ -192,6 +560,8 @@ q('btn-logout').onclick = async () => withPending('btn-logout', async () => {
     q('challenge').value = '';
     q('sig').value = '[]';
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
     toast('Logged out / auth invalidated');
   } else {
     toast(apiErrorText(res, 'Logout failed'), true);
@@ -199,110 +569,54 @@ q('btn-logout').onclick = async () => withPending('btn-logout', async () => {
 });
 
 q('btn-health').onclick = async () => {
-  q('out-health').textContent = '...';
-  q('out-health').textContent = JSON.stringify(await callJson('/health'), null, 2);
+  setOutput('out-health', 'Loading…');
+  setOutput('out-health', await callJson('/health'));
 };
 
 q('btn-status').onclick = async () => {
-  q('out-status').textContent = '...';
-  q('out-status').textContent = JSON.stringify(await callJson('/v1/status'), null, 2);
+  setOutput('out-status', 'Loading…');
+  setOutput('out-status', await callJson('/v1/status'));
 };
 
 q('btn-auth-metrics').onclick = async () => {
-  q('out-auth-metrics').textContent = '...';
-  q('out-auth-metrics').textContent = JSON.stringify(await callJson('/v1/auth/metrics'), null, 2);
+  setOutput('out-auth-metrics', 'Loading…');
+  setOutput('out-auth-metrics', await callJson('/v1/auth/metrics'));
 };
 
 q('btn-list-convs').onclick = async () => {
-  q('out-list').textContent = '...';
-  q('out-list').textContent = JSON.stringify(await callJson('/v1/conversations'), null, 2);
+  setOutput('out-list', 'Loading…');
+  const res = await callJson('/v1/conversations');
+  setOutput('out-list', res);
+  if (res.ok) {
+    const list = res.body?.items || res.body?.conversations || res.body || [];
+    conversationItems = Array.isArray(list) ? list : [];
+    renderConversationList();
+    toast('Conversation list refreshed');
+  }
 };
 
-function shortAccount(a){
-  if(!Array.isArray(a)) return 'unknown';
-  return `${a.slice(0,4).join(',')}...`;
-}
-
-function shortHexBytes(a){
-  if(!Array.isArray(a)) return 'n/a';
-  return a.slice(0,6).map(v => Number(v).toString(16).padStart(2, '0')).join('') + '...';
-}
-
-let timelineItems = [];
-let nextBeforeSeq = null;
-
-function renderTimeline(msgRes){
-  const box = q('timeline');
-  if (!box) return;
-  const items = msgRes?.body?.items || timelineItems;
-  if (!items.length) {
-    box.innerHTML = '<div class="msg-meta">No messages yet.</div>';
-    return;
-  }
-  const ordered = [...items].sort((a,b) => a.seq - b.seq);
-  box.innerHTML = ordered.map(m => `
-    <div class="msg-card">
-      <div><strong>seq #${m.seq}</strong> · slot ${m.slot ?? '-'}</div>
-      <div class="msg-meta">sender: ${shortAccount(m.sender)} · msg_id: ${shortHexBytes(m.msg_id)}</div>
-      <div class="msg-meta">cipher_len: ${m.cipher_len} · chunks: ${m.chunk_count} · flags: ${m.flags}</div>
-    </div>
-  `).join('');
-  if (q('timeline-autoscroll')?.checked) {
-    box.scrollTop = box.scrollHeight;
-  }
-}
-
-async function fetchMessagesPage(beforeSeq = null, append = false) {
-  const conv = encodeURIComponent(q('conv-id').value.trim());
-  const limit = Number(q('msg-page-limit').value || '20');
-  const params = new URLSearchParams({ conv_id: decodeURIComponent(conv), limit: String(limit) });
-  if (beforeSeq !== null && beforeSeq !== undefined && beforeSeq !== '') {
-    params.set('before_seq', String(beforeSeq));
-  }
-  const res = await callJson(`/v1/messages?${params.toString()}`);
-  if (res.ok) {
-    nextBeforeSeq = res.body?.next_before_seq ?? null;
-    q('msg-before-seq').value = nextBeforeSeq ? String(nextBeforeSeq) : '';
-    if (append) {
-      const existing = new Map(timelineItems.map(m => [m.seq, m]));
-      (res.body?.items || []).forEach(m => existing.set(m.seq, m));
-      timelineItems = [...existing.values()];
-    } else {
-      timelineItems = res.body?.items || [];
-    }
-    renderTimeline();
-  }
-  return res;
-}
-
-async function refreshLists() {
-  const convRes = await callJson('/v1/conversations');
-  const msgRes = await fetchMessagesPage(null, false);
-  q('out-list').textContent = JSON.stringify({ conversations: convRes, messages: msgRes }, null, 2);
-}
-
 q('btn-list-messages').onclick = async () => {
-  q('out-list').textContent = '...';
+  setOutput('out-list', 'Loading…');
   const before = q('msg-before-seq').value.trim();
   const res = await fetchMessagesPage(before || null, false);
-  q('out-list').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-list', res);
 };
 
 q('btn-load-recent').onclick = async () => {
-  q('out-list').textContent = '...';
+  setOutput('out-list', 'Loading…');
   const res = await fetchMessagesPage(null, false);
-  q('out-list').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-list', res);
 };
 
 q('btn-load-older').onclick = async () => {
-  q('out-list').textContent = '...';
+  setOutput('out-list', 'Loading…');
   const before = q('msg-before-seq').value.trim();
   if (!before) {
     toast('No older-page cursor available yet', true);
     return;
   }
   const res = await fetchMessagesPage(Number(before), true);
-  q('out-list').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-list', res);
 };
 
 q('btn-render-timeline').onclick = async () => {
@@ -313,15 +627,16 @@ q('btn-message-detail').onclick = async () => {
   const conv = encodeURIComponent(q('conv-id').value.trim());
   const seq = Number(q('detail-seq').value || '1');
   const res = await callJson(`/v1/messages/detail?conv_id=${conv}&seq=${seq}`);
-  q('out-message-detail').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-message-detail', res);
+  if (res.ok) selectMessage(seq);
   if (!res.ok) toast(apiErrorText(res, 'Message detail failed'), true);
 };
 
 q('btn-challenge').onclick = async () => {
-  q('out-challenge').textContent = '...';
+  setOutput('out-challenge', 'Loading…');
   const wallet = q('wallet').value.trim();
   const res = await callJson('/v1/auth/challenge', 'POST', { wallet });
-  q('out-challenge').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-challenge', res);
   if (res.ok && res.body?.challenge) {
     q('challenge').value = res.body.challenge;
     const s = readSession();
@@ -329,11 +644,14 @@ q('btn-challenge').onclick = async () => {
     s.challenge = res.body.challenge;
     writeSession(s);
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
+    toast('Challenge ready');
   }
 };
 
 q('btn-verify').onclick = async () => {
-  q('out-verify').textContent = '...';
+  setOutput('out-verify', 'Loading…');
   const payload = {
     wallet: q('wallet').value.trim(),
     challenge: q('challenge').value.trim(),
@@ -341,13 +659,15 @@ q('btn-verify').onclick = async () => {
     signature_ed25519: JSON.parse(q('sig').value),
   };
   const res = await callJson('/v1/auth/verify', 'POST', payload);
-  q('out-verify').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-verify', res);
   if (res.ok) {
     const s = readSession();
     s.authVerified = true;
     s.authVerifiedAt = new Date().toISOString();
     writeSession(s);
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
     toast('Auth verified');
   } else {
     toast(apiErrorText(res, 'Auth verify failed'), true);
@@ -377,7 +697,7 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
   if (!challenge) {
     const c = await callJson('/v1/auth/challenge', 'POST', { wallet });
     if (!c.ok) {
-      q('out-verify').textContent = JSON.stringify(c, null, 2);
+      setOutput('out-verify', c);
       toast(apiErrorText(c, 'Challenge request failed'), true);
       return;
     }
@@ -385,17 +705,14 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
     q('challenge').value = challenge;
   }
 
-  const sigHex = await window.ethereum.request({
-    method: 'personal_sign',
-    params: [challenge, wallet],
-  });
+  const sigHex = await window.ethereum.request({ method: 'personal_sign', params: [challenge, wallet] });
 
   const res = await callJson('/v1/auth/verify-wallet', 'POST', {
     wallet,
     challenge,
     signature_hex: sigHex,
   });
-  q('out-verify').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-verify', res);
   if (res.ok) {
     const s = readSession();
     s.authVerified = true;
@@ -403,6 +720,8 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
     s.walletType = 'evm';
     writeSession(s);
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
     toast('EVM auth verified');
   } else {
     toast(apiErrorText(res, 'EVM verify failed'), true);
@@ -410,7 +729,7 @@ q('btn-evm-sign-verify').onclick = async () => withPending('btn-evm-sign-verify'
 });
 
 q('btn-pop').onclick = async () => {
-  q('out-pop').textContent = '...';
+  setOutput('out-pop', 'Loading…');
   const payload = {
     account: JSON.parse(q('pop-account').value),
     provider: q('pop-provider').value.trim(),
@@ -420,11 +739,11 @@ q('btn-pop').onclick = async () => {
     signature_ed25519: JSON.parse(q('pop-sig').value),
     current_slot: 10,
   };
-  q('out-pop').textContent = JSON.stringify(await callJson('/v1/pop/verify', 'POST', payload), null, 2);
+  setOutput('out-pop', await callJson('/v1/pop/verify', 'POST', payload));
 };
 
 q('btn-conv-create').onclick = async () => {
-  q('out-conv').textContent = '...';
+  setOutput('out-conv', 'Loading…');
   const payload = {
     conv_id: JSON.parse(q('conv-id').value),
     conv_type: q('conv-type').value.trim(),
@@ -433,7 +752,14 @@ q('btn-conv-create').onclick = async () => {
     signature_ed25519: JSON.parse(q('conv-sig').value),
     current_slot: 20,
   };
-  q('out-conv').textContent = JSON.stringify(await callJson('/v1/conversations', 'POST', payload), null, 2);
+  const res = await callJson('/v1/conversations', 'POST', payload);
+  setOutput('out-conv', res);
+  if (res.ok) {
+    toast('Conversation created');
+    await refreshLists();
+  } else {
+    toast(apiErrorText(res, 'Conversation create failed'), true);
+  }
 };
 
 q('btn-add-member').onclick = async () => withPending('btn-add-member', async () => {
@@ -445,7 +771,7 @@ q('btn-add-member').onclick = async () => withPending('btn-add-member', async ()
     current_slot: 22,
   };
   const res = await callJson('/v1/conversations/add-member', 'POST', payload);
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) {
     toast('Member added');
     await refreshLists();
@@ -463,7 +789,7 @@ q('btn-remove-member').onclick = async () => withPending('btn-remove-member', as
     current_slot: 23,
   };
   const res = await callJson('/v1/conversations/remove-member', 'POST', payload);
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) {
     toast('Member removed');
     await refreshLists();
@@ -475,7 +801,8 @@ q('btn-remove-member').onclick = async () => withPending('btn-remove-member', as
 q('btn-list-members').onclick = async () => {
   const conv = encodeURIComponent(q('conv-id').value.trim());
   const res = await callJson(`/v1/conversations/members?conv_id=${conv}`);
-  q('out-members-list').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members-list', res);
+  if (res.ok) markSyncState('Members synced', 'Conversation membership snapshot updated');
   if (!res.ok) toast(apiErrorText(res, 'List members failed'), true);
 };
 
@@ -487,7 +814,7 @@ q('btn-promote-member').onclick = async () => withPending('btn-promote-member', 
     signature_ed25519: JSON.parse(q('member-sig').value),
   };
   const res = await callJson('/v1/conversations/promote-member', 'POST', payload);
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) {
     toast('Member promoted to admin');
     await q('btn-list-members').onclick();
@@ -504,7 +831,7 @@ q('btn-demote-member').onclick = async () => withPending('btn-demote-member', as
     signature_ed25519: JSON.parse(q('member-sig').value),
   };
   const res = await callJson('/v1/conversations/demote-member', 'POST', payload);
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) {
     toast('Member demoted');
     await q('btn-list-members').onclick();
@@ -514,7 +841,7 @@ q('btn-demote-member').onclick = async () => withPending('btn-demote-member', as
 });
 
 q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => {
-  q('out-send').textContent = '...';
+  setOutput('out-list', 'Loading…');
   const payload = {
     conv_id: JSON.parse(q('conv-id').value),
     sender: JSON.parse(q('msg-sender').value),
@@ -530,16 +857,17 @@ q('btn-msg-send').onclick = async () => withPending('btn-msg-send', async () => 
     current_slot: 21,
   };
   const res = await callJson('/v1/messages/send', 'POST', payload);
-  q('out-send').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-list', res);
   if (res.ok) {
     toast('Message sent');
+    await fetchMessagesPage(null, false);
   } else {
     toast(apiErrorText(res, 'Send failed'), true);
   }
 });
 
 q('btn-read-ack').onclick = async () => {
-  q('out-read').textContent = '...';
+  setOutput('out-read', 'Loading…');
   const payload = {
     conv_id: JSON.parse(q('conv-id').value),
     reader: JSON.parse(q('read-reader').value),
@@ -547,7 +875,7 @@ q('btn-read-ack').onclick = async () => {
     signature_ed25519: JSON.parse(q('read-sig').value),
     current_slot: 22,
   };
-  q('out-read').textContent = JSON.stringify(await callJson('/v1/messages/read', 'POST', payload), null, 2);
+  setOutput('out-read', await callJson('/v1/messages/read', 'POST', payload));
 };
 
 q('btn-dev-register-device').onclick = async () => {
@@ -557,7 +885,7 @@ q('btn-dev-register-device').onclick = async () => {
     account,
     current_slot: 1,
   });
-  q('out-session').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-session', res);
   if (res.ok && res.body?.pubkey) {
     q('pubkey').value = JSON.stringify(res.body.pubkey);
   }
@@ -568,7 +896,7 @@ q('btn-dev-sign-challenge').onclick = async () => {
     seed: devSeed(),
     challenge: q('challenge').value.trim(),
   });
-  q('out-verify').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-verify', res);
   if (res.ok) {
     q('pubkey').value = JSON.stringify(res.body.sig_pubkey_ed25519);
     q('sig').value = JSON.stringify(res.body.signature_ed25519);
@@ -584,7 +912,7 @@ q('btn-dev-sign-pop').onclick = async () => {
     nullifier: JSON.parse(q('pop-nullifier').value),
     expires_at_slot: Number(q('pop-expiry').value),
   });
-  q('out-pop').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-pop', res);
   if (res.ok) q('pop-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -594,7 +922,7 @@ q('btn-dev-sign-blob').onclick = async () => {
     sender: JSON.parse(q('msg-sender').value),
     text: q('blob-text').value,
   });
-  q('out-blob').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-blob', res);
   if (res.ok) q('blob-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -606,7 +934,7 @@ q('btn-blob-register').onclick = async () => withPending('btn-blob-register', as
     current_slot: 19,
   };
   const res = await callJson('/v1/blobs/register', 'POST', payload);
-  q('out-blob').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-blob', res);
   if (res.ok && res.body) {
     q('msg-cipher-root').value = JSON.stringify(res.body.root);
     q('msg-cipher-len').value = String(res.body.total_len);
@@ -625,7 +953,7 @@ q('btn-dev-sign-conv').onclick = async () => {
     creator: JSON.parse(q('conv-creator').value),
     initial_participants: JSON.parse(q('conv-participants').value),
   });
-  q('out-conv').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-conv', res);
   if (res.ok) q('conv-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -643,7 +971,7 @@ q('btn-dev-sign-send').onclick = async () => {
     fee_limit: Number(q('msg-fee-limit').value),
     bond_limit: Number(q('msg-bond-limit').value),
   });
-  q('out-send').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-list', res);
   if (res.ok) q('msg-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -654,7 +982,7 @@ q('btn-dev-sign-add-member').onclick = async () => {
     actor: JSON.parse(q('member-actor').value),
     member: JSON.parse(q('member-target').value),
   });
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -665,7 +993,7 @@ q('btn-dev-sign-remove-member').onclick = async () => {
     actor: JSON.parse(q('member-actor').value),
     member: JSON.parse(q('member-target').value),
   });
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -676,7 +1004,7 @@ q('btn-dev-sign-promote-member').onclick = async () => {
     actor: JSON.parse(q('member-actor').value),
     member: JSON.parse(q('member-target').value),
   });
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -687,7 +1015,7 @@ q('btn-dev-sign-demote-member').onclick = async () => {
     actor: JSON.parse(q('member-actor').value),
     member: JSON.parse(q('member-target').value),
   });
-  q('out-members').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-members', res);
   if (res.ok) q('member-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
@@ -698,20 +1026,18 @@ q('btn-dev-sign-read').onclick = async () => {
     reader: JSON.parse(q('read-reader').value),
     seq: Number(q('read-seq').value),
   });
-  q('out-read').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-read', res);
   if (res.ok) q('read-sig').value = JSON.stringify(res.body.signature_ed25519);
 };
 
 q('btn-demo-bootstrap').onclick = async () => {
-  q('out-session').textContent = '...';
-  const res = await callJson('/v1/dev/bootstrap-demo', 'POST', {
-    seed_a: 1,
-    seed_b: 2,
-  });
-  q('out-session').textContent = JSON.stringify(res, null, 2);
+  setOutput('out-session', 'Loading…');
+  const res = await callJson('/v1/dev/bootstrap-demo', 'POST', { seed_a: 1, seed_b: 2 });
+  setOutput('out-session', res);
   if (res.ok) {
     q('conv-id').value = JSON.stringify(res.body.conv_id);
     q('read-seq').value = String(res.body.msg_seq);
+    activeConversationKey = JSON.stringify(res.body.conv_id);
     await refreshLists();
     toast('Demo bootstrap ready');
   } else {
@@ -733,15 +1059,13 @@ q('btn-send-refresh').onclick = async () => withPending('btn-send-refresh', asyn
   toast('Quick send + refresh done');
 });
 
-let refreshTimer = null;
-let autoRefreshWanted = false;
-
 function stopAutoRefresh() {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
   q('btn-auto-refresh').textContent = 'Start auto-refresh';
+  markSyncState('Manual refresh', 'Tap refresh or enable auto-refresh');
 }
 
 function startAutoRefresh() {
@@ -750,9 +1074,10 @@ function startAutoRefresh() {
   refreshTimer = setInterval(async () => {
     if (document.hidden) return;
     await refreshLists();
-    q('out-status').textContent = JSON.stringify(await callJson('/v1/status'), null, 2);
+    setOutput('out-status', await callJson('/v1/status'));
   }, ms);
   q('btn-auto-refresh').textContent = `Auto-refresh ON (${ms}ms)`;
+  markSyncState('Auto-refresh live', `Refreshing every ${ms}ms while this tab stays visible`);
 }
 
 q('btn-auto-refresh').onclick = async () => {
@@ -806,6 +1131,8 @@ if (window.ethereum?.on) {
     if (wallet) s.walletType = 'evm';
     writeSession(s);
     renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');
     refreshWalletCapability();
   });
 
@@ -820,4 +1147,8 @@ q('evm-allowed-chains')?.addEventListener('change', () => {
 
 installMobileKeyboardSafety();
 refreshWalletCapability();
+renderConversationList();
+renderTimeline();
 renderSession();
+updateOverviewCards();
+markSyncState('Ready', 'Open a chat or run the demo bootstrap to populate the timeline');

@@ -7,248 +7,456 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="container">
-      <header>
-        <h1>JamTalk App Shell</h1>
-        <p class="muted">Unchain WhatsApp alternative — wallet identity, trusted membership, verifiable timeline.</p>
-        <p class="muted"><a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/v1/status">Status</a></p>
-      </header>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-top glass-panel">
+          <div>
+            <p class="eyebrow">JamTalk</p>
+            <h1>Secure chats</h1>
+            <p class="muted">Wallet identity, trusted membership, verifiable timeline.</p>
+          </div>
+          <div class="hero-presence">
+            <div class="presence-orb"></div>
+            <div>
+              <strong>Private by default</strong>
+              <p class="muted small">Telegram-like shell with cleaner end-user messaging and optional protocol depth.</p>
+            </div>
+          </div>
+          <div class="mini-nav">
+            <a href="/">Home</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+            <a href="/v1/status">Status</a>
+          </div>
+        </div>
 
-      <section class="card hero-grid">
-        <div>
-          <h2>Control Room</h2>
-          <p class="muted">Use this shell as a trust-first QA cockpit: connect identity, verify auth, create conversations, send encrypted payload roots, and validate timeline/read behavior.</p>
-        </div>
-        <div class="pill-row" aria-label="quick navigation">
-          <a class="pill" href="#wallet-session">Wallet</a>
-          <a class="pill" href="#auth-challenge">Auth</a>
-          <a class="pill" href="#pop-verify">PoP</a>
-          <a class="pill" href="#conversation-flow">Conversations</a>
-          <a class="pill" href="#composer-anchor">Composer</a>
-          <a class="pill" href="#timeline-anchor">Timeline</a>
-        </div>
-      </section>
+        <section class="sidebar-search glass-panel">
+          <div class="panel-heading">
+            <div>
+              <label class="section-kicker" for="wallet">Session</label>
+              <h2>Wallet link</h2>
+            </div>
+            <span class="panel-chip">Local beta</span>
+          </div>
+          <div class="row single-row compact-row">
+            <input id="wallet" placeholder="wallet-1 / 0x..." />
+            <button id="btn-connect">Connect wallet</button>
+          </div>
+          <div id="wallet-capability" class="capability"></div>
+          <div class="metric-strip">
+            <div>
+              <span class="metric-label">Chats</span>
+              <strong id="sidebar-conversation-count">0</strong>
+            </div>
+            <div>
+              <span class="metric-label">Messages</span>
+              <strong id="sidebar-message-count">0</strong>
+            </div>
+            <div>
+              <span class="metric-label">State</span>
+              <strong id="sidebar-session-state">Offline</strong>
+            </div>
+          </div>
+          <div class="session-chip-row">
+            <div id="session-human-state" class="summary-chip">Connect a wallet to start</div>
+            <div id="session-wallet-short" class="summary-chip subtle">No wallet</div>
+          </div>
+        </section>
 
-      <section class="card" id="health-checks">
-        <h2>Health</h2>
-        <button id="btn-health">Check API health</button>
-        <button id="btn-auth-metrics">Get auth metrics</button>
-        <pre id="out-health"></pre>
-        <pre id="out-auth-metrics"></pre>
-      </section>
+        <section class="sidebar-list glass-panel">
+          <div class="sidebar-list-header">
+            <div>
+              <p class="section-kicker">Chats</p>
+              <h2>Conversation list</h2>
+            </div>
+            <button id="btn-list-convs" class="secondary-btn">Refresh</button>
+          </div>
+          <div class="chat-filter-row">
+            <span class="filter-pill active">All</span>
+            <span class="filter-pill">Groups</span>
+            <span class="filter-pill">Trusted</span>
+          </div>
+          <div id="conversation-list" class="conversation-list">
+            <div class="empty-state compact">
+              <div class="empty-icon">💬</div>
+              <div>
+                <strong>No chats loaded yet</strong>
+                <p>Run the demo bootstrap or refresh conversations to populate the sidebar.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
 
-      <section class="card" id="wallet-session">
-        <h2>Wallet Session (browser-first)</h2>
-        <div class="row">
-          <input id="wallet" placeholder="wallet-1 / 0x..." />
-          <button id="btn-connect">Connect wallet</button>
-        </div>
-        <div class="row">
-          <button id="btn-connect-evm">Connect injected EVM wallet</button>
-          <button id="btn-evm-sign-verify">EVM sign + verify challenge</button>
-        </div>
-        <div class="row">
-          <input id="evm-allowed-chains" placeholder="allowed chain ids csv" value="1,8453,11155111" />
-          <input id="evm-chain-id" placeholder="current chain id" value="" />
-        </div>
-        <div class="row">
-          <button id="btn-refresh-auth">Refresh auth challenge</button>
-          <button id="btn-logout">Logout / invalidate auth session</button>
-        </div>
-        <div id="wallet-capability" class="capability"></div>
-        <div class="row">
-          <button id="btn-save-session">Save local session</button>
-          <button id="btn-clear-session">Clear local session</button>
-        </div>
-        <div class="row">
-          <input id="dev-seed" placeholder="dev seed (0-255)" value="1" />
-          <button id="btn-dev-register-device">Dev register device</button>
-        </div>
-        <div class="row">
-          <button id="btn-dev-sign-challenge">Dev sign challenge</button>
-          <button id="btn-dev-sign-pop">Dev sign PoP</button>
-        </div>
-        <div class="row">
-          <button id="btn-dev-sign-conv">Dev sign conversation</button>
-          <button id="btn-dev-sign-send">Dev sign send</button>
-        </div>
-        <div class="row">
-          <button id="btn-dev-sign-read">Dev sign read</button>
-          <button id="btn-demo-bootstrap">One-click demo bootstrap</button>
-        </div>
-        <pre id="out-session"></pre>
-      </section>
+      <section class="chat-stage">
+        <header class="chat-header glass-panel">
+          <div class="chat-header-copy">
+            <p class="eyebrow">App shell</p>
+            <h2 id="active-conversation-title">Your secure inbox</h2>
+            <p id="active-conversation-subtitle" class="muted">Select a chat to open the timeline, review members, and send a new encrypted message.</p>
+            <div class="chat-header-pills">
+              <span class="header-pill">Wallet identity</span>
+              <span class="header-pill">Trusted membership</span>
+              <span class="header-pill">Inspectable delivery</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button id="btn-demo-bootstrap">One-click demo bootstrap</button>
+            <button id="btn-auto-refresh" class="secondary-btn">Start auto-refresh</button>
+          </div>
+        </header>
 
-      <section class="card grid-2" id="auth-challenge">
-        <div>
-          <h2>Auth: Challenge</h2>
-          <button id="btn-challenge">Request challenge</button>
-          <pre id="out-challenge"></pre>
-        </div>
-        <div>
-          <h2>Auth: Verify</h2>
-          <label>Challenge</label>
-          <input id="challenge" placeholder="paste challenge" />
-          <label>Pubkey [u8;32] JSON</label>
-          <textarea id="pubkey" rows="2">[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]</textarea>
-          <label>Signature bytes JSON</label>
-          <textarea id="sig" rows="2">[]</textarea>
-          <p class="muted">Tip: for now this UI stores session state locally and supports manual signature input.</p>
-          <button id="btn-verify">Verify challenge</button>
-          <pre id="out-verify"></pre>
-        </div>
-      </section>
+        <section class="chat-body">
+          <div class="timeline-pane glass-panel">
+            <div class="timeline-toolbar">
+              <div>
+                <p class="section-kicker">Timeline</p>
+                <h3>Conversation activity</h3>
+                <p class="timeline-subcopy">Messages stay front and center. Protocol details now live in secondary panels.</p>
+              </div>
+              <div class="toolbar-actions">
+                <button id="btn-render-timeline" class="secondary-btn">Render timeline</button>
+                <button id="btn-load-recent" class="secondary-btn">Recent</button>
+                <button id="btn-load-older" class="secondary-btn">Older</button>
+              </div>
+            </div>
 
-      <section class="card" id="pop-verify">
-        <h2>PoP Verify</h2>
-        <div class="row">
-          <input id="pop-account" placeholder="account [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
-          <input id="pop-provider" placeholder="provider" value="test-provider" />
-        </div>
-        <div class="row">
-          <input id="pop-nullifier" placeholder="nullifier [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
-          <input id="pop-expiry" placeholder="expires_at_slot" value="1000" />
-        </div>
-        <label>Proof blob JSON bytes</label>
-        <textarea id="pop-proof" rows="2">[1,2,3]</textarea>
-        <label>Signature bytes JSON</label>
-        <textarea id="pop-sig" rows="2">[]</textarea>
-        <button id="btn-pop">Verify PoP</button>
-        <pre id="out-pop"></pre>
-      </section>
+            <div class="chat-hero-strip">
+              <div class="hero-metric-card">
+                <span class="metric-label">Active chat</span>
+                <strong id="hero-active-chat">No selection</strong>
+                <span class="hero-meta" id="hero-active-chat-meta">Choose or create a conversation</span>
+              </div>
+              <div class="hero-metric-card">
+                <span class="metric-label">Trust state</span>
+                <strong id="hero-trust-state">Session pending</strong>
+                <span class="hero-meta" id="hero-trust-meta">Verify a wallet session to unlock the full flow</span>
+              </div>
+              <div class="hero-metric-card">
+                <span class="metric-label">Latest sync</span>
+                <strong id="hero-sync-state">Not refreshed</strong>
+                <span class="hero-meta" id="hero-sync-meta">Tap refresh or enable auto-refresh</span>
+              </div>
+            </div>
 
-      <section class="card">
-        <h2>Blob register (JT-014)</h2>
-        <p class="muted">Register plaintext as blob chunks, then use returned root/len in send flow.</p>
-        <textarea id="blob-text" rows="3">hello</textarea>
-        <div class="row">
-          <button id="btn-blob-preset">Use quick preset text</button>
-          <button id="btn-dev-sign-blob">Dev sign blob</button>
-        </div>
-        <div class="row">
-          <button id="btn-blob-register">Register blob</button>
-        </div>
-        <label>blob signature bytes JSON</label>
-        <textarea id="blob-sig" rows="2">[]</textarea>
-        <pre id="out-blob"></pre>
-      </section>
+            <div id="timeline" class="timeline chat-timeline">
+              <div class="empty-state">
+                <div class="empty-icon">🫧</div>
+                <div>
+                  <strong>No timeline yet</strong>
+                  <p>Create a conversation or bootstrap demo data to see the message stream here.</p>
+                </div>
+              </div>
+            </div>
 
-      <section class="card" id="conversation-flow">
-        <h2>Conversation + Send + Read (JT-009 UI flow)</h2>
-        <p class="muted">Browser form flow for `/v1/conversations`, `/v1/messages/send`, `/v1/messages/read`</p>
+            <div class="composer-card" id="composer-anchor">
+              <div class="composer-topline">
+                <div>
+                  <p class="section-kicker">Composer</p>
+                  <h3>Send a message</h3>
+                </div>
+                <label class="inline checkbox-inline"><input id="timeline-autoscroll" type="checkbox" checked /> auto-scroll</label>
+              </div>
+              <p class="composer-subcopy">Keep the main flow simple. JamTalk handles the send pipeline while advanced signing tools stay available below.</p>
+              <div class="row single-row">
+                <textarea id="blob-text" rows="3" placeholder="Write a message to prepare for encrypted delivery...">hello</textarea>
+              </div>
+              <div class="composer-action-row">
+                <button id="btn-blob-preset" class="secondary-btn">Use sample text</button>
+                <button id="btn-send-refresh">Quick send + refresh</button>
+              </div>
+              <details class="nested-panel" open>
+                <summary>Message pipeline</summary>
+                <div class="composer-helper">
+                  <span class="helper-pill">1. sign blob</span>
+                  <span class="helper-pill">2. register blob</span>
+                  <span class="helper-pill">3. sign send</span>
+                  <span class="helper-pill">4. dispatch + refresh</span>
+                </div>
+                <div class="row compact-row four-up">
+                  <input id="dev-seed" placeholder="dev seed (0-255)" value="1" />
+                  <button id="btn-dev-sign-blob" class="secondary-btn">Sign blob</button>
+                  <button id="btn-blob-register">Register blob</button>
+                  <button id="btn-dev-sign-send" class="secondary-btn">Sign send</button>
+                </div>
+                <div class="sticky-compose">
+                  <button id="btn-msg-send">Send message</button>
+                </div>
+              </details>
+              <details class="nested-panel">
+                <summary>Advanced send fields</summary>
+                <label>blob signature bytes JSON</label>
+                <textarea id="blob-sig" rows="2">[]</textarea>
+                <pre id="out-blob" class="debug-output"></pre>
+                <div class="row compact-row two-up">
+                  <input id="msg-sender" placeholder="sender [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+                  <input id="msg-nonce" placeholder="sender_nonce" value="1" />
+                </div>
+                <div class="row compact-row two-up">
+                  <input id="msg-cipher-root" placeholder="cipher_root [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
+                  <input id="msg-envelope-root" placeholder="envelope_root [u8;32] JSON" value="[8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]" />
+                </div>
+                <div class="row compact-row four-up">
+                  <input id="msg-cipher-len" placeholder="cipher_len" value="5" />
+                  <input id="msg-chunk-count" placeholder="chunk_count" value="1" />
+                  <input id="msg-recipients-hint" placeholder="recipients_hint_count" value="1" />
+                  <input id="msg-fee-limit" placeholder="fee_limit" value="1000000" />
+                </div>
+                <input id="msg-bond-limit" placeholder="bond_limit" value="1000000" />
+                <label>message signature bytes JSON</label>
+                <textarea id="msg-sig" rows="2">[]</textarea>
+              </details>
+            </div>
+          </div>
 
-        <h3>Create conversation</h3>
-        <div class="row">
-          <input id="conv-id" placeholder="conv_id [u8;32] JSON" value="[9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9]" />
-          <input id="conv-type" placeholder="dm|group" value="dm" />
-        </div>
-        <div class="row">
-          <input id="conv-creator" placeholder="creator [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
-          <input id="conv-participants" placeholder="participants JSON array" value="[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]]" />
-        </div>
-        <label>conversation signature bytes JSON</label>
-        <textarea id="conv-sig" rows="2">[]</textarea>
-        <button id="btn-conv-create">Create conversation</button>
-        <pre id="out-conv"></pre>
+          <aside class="details-pane">
+            <section class="glass-panel summary-card-stack">
+              <div class="details-header">
+                <div>
+                  <p class="section-kicker">Overview</p>
+                  <h3>Chat and trust summary</h3>
+                </div>
+                <span class="panel-chip">Primary</span>
+              </div>
+              <div class="info-stack">
+                <div class="info-card">
+                  <span class="info-label">Conversation</span>
+                  <strong id="summary-conversation-name">No chat selected</strong>
+                  <p id="summary-conversation-meta" class="muted small">Choose a conversation to load its participant and timeline summary.</p>
+                </div>
+                <div class="info-card success">
+                  <span class="info-label">Session confidence</span>
+                  <strong id="summary-session-trust">Offline</strong>
+                  <p id="summary-session-meta" class="muted small">Connect and verify a wallet to unlock the full send flow.</p>
+                </div>
+                <div class="info-card accent">
+                  <span class="info-label">Selected message</span>
+                  <strong id="summary-message-title">No message selected</strong>
+                  <p id="summary-message-meta" class="muted small">Click a message bubble to inspect delivery and payload details.</p>
+                </div>
+              </div>
+            </section>
 
-        <h3>Participants (JT-022)</h3>
-        <div class="row">
-          <input id="member-actor" placeholder="actor [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
-          <input id="member-target" placeholder="member [u8;32] JSON" value="[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3]" />
-        </div>
-        <div class="row">
-          <button id="btn-dev-sign-add-member">Dev sign add member</button>
-          <button id="btn-dev-sign-remove-member">Dev sign remove member</button>
-        </div>
-        <div class="row">
-          <button id="btn-dev-sign-promote-member">Dev sign promote member</button>
-          <button id="btn-dev-sign-demote-member">Dev sign demote member</button>
-        </div>
-        <div class="row">
-          <button id="btn-list-members">List members</button>
-        </div>
-        <label>member mutation signature bytes JSON</label>
-        <textarea id="member-sig" rows="2">[]</textarea>
-        <div class="row">
-          <button id="btn-add-member">Add member</button>
-          <button id="btn-remove-member">Remove member</button>
-        </div>
-        <div class="row">
-          <button id="btn-promote-member">Promote to admin</button>
-          <button id="btn-demote-member">Demote admin</button>
-        </div>
-        <pre id="out-members"></pre>
-        <pre id="out-members-list"></pre>
+            <section class="glass-panel status-card">
+              <div class="details-header">
+                <div>
+                  <p class="section-kicker">Quick actions</p>
+                  <h3>Health and session</h3>
+                </div>
+                <span class="panel-chip">Essential</span>
+              </div>
+              <div class="row compact-row two-up">
+                <button id="btn-health" class="secondary-btn">API health</button>
+                <button id="btn-status" class="secondary-btn">Status</button>
+              </div>
+              <div class="row compact-row two-up">
+                <button id="btn-auth-metrics" class="secondary-btn">Auth metrics</button>
+                <button id="btn-refresh-auth" class="secondary-btn">Refresh challenge</button>
+              </div>
+              <button id="btn-logout" class="danger-btn">Logout / invalidate auth</button>
+            </section>
 
-        <h3 id="composer-anchor">Send message</h3>
-        <div class="row">
-          <input id="msg-sender" placeholder="sender [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
-          <input id="msg-nonce" placeholder="sender_nonce" value="1" />
-        </div>
-        <div class="row">
-          <input id="msg-cipher-root" placeholder="cipher_root [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
-          <input id="msg-envelope-root" placeholder="envelope_root [u8;32] JSON" value="[8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]" />
-        </div>
-        <div class="row">
-          <input id="msg-cipher-len" placeholder="cipher_len" value="5" />
-          <input id="msg-chunk-count" placeholder="chunk_count" value="1" />
-        </div>
-        <div class="row">
-          <input id="msg-recipients-hint" placeholder="recipients_hint_count" value="1" />
-          <input id="msg-fee-limit" placeholder="fee_limit" value="1000000" />
-        </div>
-        <input id="msg-bond-limit" placeholder="bond_limit" value="1000000" />
-        <label>message signature bytes JSON</label>
-        <textarea id="msg-sig" rows="2">[]</textarea>
-        <div class="sticky-compose">
-          <button id="btn-msg-send">Send message</button>
-          <button id="btn-send-refresh">Quick send + refresh timeline</button>
-        </div>
-        <pre id="out-send"></pre>
+            <details class="glass-panel inspector-card" open>
+              <summary>Wallet and sign-in</summary>
+              <div class="detail-stack">
+                <div class="step-list">
+                  <div class="step-card"><span>1</span><div><strong>Connect</strong><p>Attach an EVM wallet or set a local wallet id.</p></div></div>
+                  <div class="step-card"><span>2</span><div><strong>Verify</strong><p>Approve a challenge so the session can send and manage chats.</p></div></div>
+                  <div class="step-card"><span>3</span><div><strong>Stay in sync</strong><p>Refresh or clear the local session when needed.</p></div></div>
+                </div>
+                <div class="row compact-row two-up">
+                  <button id="btn-connect-evm">Connect injected EVM wallet</button>
+                  <button id="btn-evm-sign-verify">EVM sign + verify</button>
+                </div>
+                <div class="row compact-row two-up">
+                  <input id="evm-allowed-chains" placeholder="allowed chain ids csv" value="1,8453,11155111" />
+                  <input id="evm-chain-id" placeholder="current chain id" value="" />
+                </div>
+                <div class="row compact-row three-up">
+                  <button id="btn-challenge" class="secondary-btn">Request challenge</button>
+                  <button id="btn-save-session" class="secondary-btn">Save local session</button>
+                  <button id="btn-clear-session" class="secondary-btn">Clear local session</button>
+                </div>
+                <label>Challenge</label>
+                <input id="challenge" placeholder="paste challenge" />
+                <details class="nested-panel">
+                  <summary>Developer signing tools</summary>
+                  <div class="row compact-row two-up">
+                    <button id="btn-dev-register-device" class="secondary-btn">Dev register device</button>
+                    <button id="btn-dev-sign-challenge" class="secondary-btn">Dev sign challenge</button>
+                  </div>
+                  <label>Pubkey [u8;32] JSON</label>
+                  <textarea id="pubkey" rows="2">[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]</textarea>
+                  <label>Signature bytes JSON</label>
+                  <textarea id="sig" rows="2">[]</textarea>
+                  <button id="btn-verify">Verify challenge</button>
+                </details>
+              </div>
+            </details>
 
-        <h3>Read ack</h3>
-        <div class="row">
-          <input id="read-reader" placeholder="reader [u8;32] JSON" value="[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]" />
-          <input id="read-seq" placeholder="seq" value="1" />
-        </div>
-        <label>read ack signature bytes JSON</label>
-        <textarea id="read-sig" rows="2">[]</textarea>
-        <button id="btn-read-ack">Ack read</button>
-        <pre id="out-read"></pre>
+            <details class="glass-panel inspector-card" open>
+              <summary>Start or manage a chat</summary>
+              <div class="detail-stack" id="conversation-flow">
+                <div class="row compact-row two-up">
+                  <button id="btn-conv-create">Create conversation</button>
+                  <button id="btn-list-members" class="secondary-btn">List members</button>
+                </div>
+                <div class="row compact-row two-up">
+                  <button id="btn-add-member">Add member</button>
+                  <button id="btn-remove-member" class="danger-btn">Remove member</button>
+                </div>
+                <div class="row compact-row two-up">
+                  <button id="btn-promote-member" class="secondary-btn">Promote to admin</button>
+                  <button id="btn-demote-member" class="secondary-btn">Demote admin</button>
+                </div>
+                <div class="row compact-row two-up">
+                  <button id="btn-list-messages" class="secondary-btn">Refresh messages</button>
+                  <button id="btn-message-detail" class="secondary-btn">Message detail</button>
+                </div>
+                <div class="row compact-row two-up">
+                  <input id="detail-seq" placeholder="seq for message detail" value="1" />
+                  <input id="refresh-interval" placeholder="refresh ms" value="5000" />
+                </div>
+                <details class="nested-panel">
+                  <summary>Advanced conversation fields</summary>
+                  <label>Conversation ID / type</label>
+                  <div class="row compact-row two-up">
+                    <input id="conv-id" placeholder="conv_id [u8;32] JSON" value="[9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9]" />
+                    <input id="conv-type" placeholder="dm|group" value="dm" />
+                  </div>
+                  <div class="row compact-row two-up">
+                    <input id="conv-creator" placeholder="creator [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+                    <input id="conv-participants" placeholder="participants JSON array" value="[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]]" />
+                  </div>
+                  <button id="btn-dev-sign-conv" class="secondary-btn">Sign conversation</button>
+                  <label>conversation signature bytes JSON</label>
+                  <textarea id="conv-sig" rows="2">[]</textarea>
+                  <div class="row compact-row two-up">
+                    <input id="member-actor" placeholder="actor [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+                    <input id="member-target" placeholder="member [u8;32] JSON" value="[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3]" />
+                  </div>
+                  <div class="row compact-row two-up">
+                    <button id="btn-dev-sign-add-member" class="secondary-btn">Sign add</button>
+                    <button id="btn-dev-sign-remove-member" class="secondary-btn">Sign remove</button>
+                  </div>
+                  <div class="row compact-row two-up">
+                    <button id="btn-dev-sign-promote-member" class="secondary-btn">Sign promote</button>
+                    <button id="btn-dev-sign-demote-member" class="secondary-btn">Sign demote</button>
+                  </div>
+                  <label>member mutation signature bytes JSON</label>
+                  <textarea id="member-sig" rows="2">[]</textarea>
+                  <div class="row compact-row two-up">
+                    <input id="msg-page-limit" placeholder="message page size" value="20" />
+                    <input id="msg-before-seq" placeholder="before_seq cursor (optional)" value="" />
+                  </div>
+                </details>
+                <details class="nested-panel">
+                  <summary>Read sync</summary>
+                  <label>Read ack</label>
+                  <div class="row compact-row two-up">
+                    <input id="read-reader" placeholder="reader [u8;32] JSON" value="[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]" />
+                    <input id="read-seq" placeholder="seq" value="1" />
+                  </div>
+                  <div class="row compact-row two-up">
+                    <button id="btn-dev-sign-read" class="secondary-btn">Sign read</button>
+                    <button id="btn-read-ack">Ack read</button>
+                  </div>
+                  <label>read ack signature bytes JSON</label>
+                  <textarea id="read-sig" rows="2">[]</textarea>
+                </details>
+              </div>
+            </details>
 
-        <div class="row">
-          <button id="btn-list-convs">List conversations</button>
-          <button id="btn-list-messages">List messages for conv_id</button>
-        </div>
-        <div class="row">
-          <input id="msg-page-limit" placeholder="message page size" value="20" />
-          <input id="msg-before-seq" placeholder="before_seq cursor (optional)" value="" />
-        </div>
-        <div class="row">
-          <button id="btn-load-recent">Load recent page</button>
-          <button id="btn-load-older">Load older page</button>
-        </div>
-        <div class="row">
-          <input id="refresh-interval" placeholder="refresh ms" value="5000" />
-          <button id="btn-auto-refresh">Start auto-refresh</button>
-        </div>
-        <p class="muted">Auto-refresh pauses when tab is hidden and resumes when visible.</p>
-        <pre id="out-list"></pre>
-
-        <h3 id="timeline-anchor">Chat timeline (JT-015/JT-021)</h3>
-        <div class="row">
-          <button id="btn-render-timeline">Render timeline</button>
-          <label class="inline"><input id="timeline-autoscroll" type="checkbox" checked /> auto-scroll</label>
-        </div>
-        <div class="row">
-          <input id="detail-seq" placeholder="seq for message detail" value="1" />
-          <button id="btn-message-detail">Get message detail</button>
-        </div>
-        <pre id="out-message-detail"></pre>
-        <div id="timeline" class="timeline"></div>
-
-        <button id="btn-status">Get status</button>
-        <pre id="out-status"></pre>
+            <details class="glass-panel inspector-card">
+              <summary>Message, member, and proof details</summary>
+              <div class="detail-stack">
+                <div class="info-card accent slim">
+                  <span class="info-label">Inspector hint</span>
+                  <strong>Primary UX stays readable</strong>
+                  <p class="muted small">Detailed protocol data is still available here when you need to debug a flow.</p>
+                </div>
+                <details class="nested-panel" open>
+                  <summary>Live detail snapshots</summary>
+                  <div class="debug-grid single-column">
+                    <div class="debug-card">
+                      <span class="debug-title">Health</span>
+                      <pre id="out-health" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Status</span>
+                      <pre id="out-status" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Auth metrics</span>
+                      <pre id="out-auth-metrics" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Challenge response</span>
+                      <pre id="out-challenge" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Verify response</span>
+                      <pre id="out-verify" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Session cache</span>
+                      <pre id="out-session" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Conversation response</span>
+                      <pre id="out-conv" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Member mutation response</span>
+                      <pre id="out-members" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Members list</span>
+                      <pre id="out-members-list" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Message detail</span>
+                      <pre id="out-message-detail" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">List / timeline payload</span>
+                      <pre id="out-list" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">Read response</span>
+                      <pre id="out-read" class="debug-output"></pre>
+                    </div>
+                    <div class="debug-card">
+                      <span class="debug-title">PoP verification</span>
+                      <pre id="out-pop" class="debug-output"></pre>
+                    </div>
+                  </div>
+                </details>
+                <details class="nested-panel">
+                  <summary>Proof of personhood</summary>
+                  <div class="detail-stack" id="pop-verify">
+                    <div class="row compact-row two-up">
+                      <input id="pop-account" placeholder="account [u8;32] JSON" value="[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]" />
+                      <input id="pop-provider" placeholder="provider" value="test-provider" />
+                    </div>
+                    <div class="row compact-row two-up">
+                      <input id="pop-nullifier" placeholder="nullifier [u8;32] JSON" value="[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]" />
+                      <input id="pop-expiry" placeholder="expires_at_slot" value="1000" />
+                    </div>
+                    <label>Proof blob JSON bytes</label>
+                    <textarea id="pop-proof" rows="2">[1,2,3]</textarea>
+                    <label>Signature bytes JSON</label>
+                    <textarea id="pop-sig" rows="2">[]</textarea>
+                    <div class="row compact-row two-up">
+                      <button id="btn-dev-sign-pop" class="secondary-btn">Dev sign PoP</button>
+                      <button id="btn-pop">Verify PoP</button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </details>
+          </aside>
+        </section>
       </section>
     </main>
 
