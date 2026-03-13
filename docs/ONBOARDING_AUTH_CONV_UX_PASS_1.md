@@ -64,4 +64,4 @@ Focus areas in the app shell:
 
 ## Commits
 - Previously pushed frontend baseline: `d603fb58ea873541148547bd044e654254769abf`
-- UX pass 1 commit: `ef9b77ab8c44d65f6175daf6378576624e6c58dd`
+- UX implementation commit: `bab7ab2909808b14e59a5c5dcd1f4845db6c5f69`
